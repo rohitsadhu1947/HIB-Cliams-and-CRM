@@ -22,36 +22,44 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
 import { useToast } from "@/hooks/use-toast"
-import { Plus, Search, Edit, Trash2, UserPlus, RefreshCw, X } from "lucide-react"
-import { format } from "date-fns"
+import {
+  Plus,
+  Search,
+  Edit,
+  Trash2,
+  PresentationIcon as AssignIcon,
+  ChevronLeft,
+  ChevronRight,
+  RefreshCw,
+  X,
+} from "lucide-react"
 
 interface Lead {
   id: number
   lead_number: string
-  source_id: number | null
   first_name: string
   last_name: string
-  email: string | null
-  phone: string | null
-  company_name: string | null
-  industry: string | null
-  lead_value: number | null
+  email?: string
+  phone?: string
+  company_name?: string
+  industry?: string
+  lead_value?: number
+  source_name?: string
+  source_id?: number
   status: string
   priority: string
-  assigned_to: number | null
-  assigned_at: string | null
-  expected_close_date: string | null
-  notes: string | null
+  assigned_user_name?: string
+  assigned_to?: number
+  expected_close_date?: string
+  notes?: string
   created_at: string
   updated_at: string
-  source_name: string | null
-  assigned_user_name: string | null
 }
 
 interface LeadSource {
   id: number
   name: string
-  description: string | null
+  description?: string
   is_active: boolean
 }
 
@@ -63,18 +71,18 @@ interface User {
 }
 
 interface CreateLeadData {
-  source_id: number | null
+  source_id?: number
   first_name: string
   last_name: string
-  email: string
-  phone: string
-  company_name: string
-  industry: string
-  lead_value: number | null
+  email?: string
+  phone?: string
+  company_name?: string
+  industry?: string
+  lead_value?: number
   status: string
   priority: string
-  expected_close_date: string
-  notes: string
+  expected_close_date?: string
+  notes?: string
 }
 
 const statusColors = {
@@ -83,8 +91,8 @@ const statusColors = {
   qualified: "bg-orange-100 text-orange-800 border-orange-200",
   proposal: "bg-purple-100 text-purple-800 border-purple-200",
   negotiation: "bg-indigo-100 text-indigo-800 border-indigo-200",
-  won: "bg-green-100 text-green-800 border-green-200",
-  lost: "bg-red-100 text-red-800 border-red-200",
+  "closed-won": "bg-green-100 text-green-800 border-green-200",
+  "closed-lost": "bg-red-100 text-red-800 border-red-200",
 }
 
 const priorityColors = {
@@ -100,34 +108,43 @@ export default function LeadsPage() {
   const [users, setUsers] = useState<User[]>([])
   const [loading, setLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState<string | null>(null)
+
+  // Filters and search
   const [search, setSearch] = useState("")
   const [statusFilter, setStatusFilter] = useState("")
   const [sourceFilter, setSourceFilter] = useState("")
   const [assignedToFilter, setAssignedToFilter] = useState("")
+
+  // Pagination
   const [currentPage, setCurrentPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [totalCount, setTotalCount] = useState(0)
+
+  // Dialog states
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
   const [isAssignDialogOpen, setIsAssignDialogOpen] = useState(false)
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null)
-  const [selectedUserId, setSelectedUserId] = useState<string>("")
-  const { toast } = useToast()
 
-  const [newLead, setNewLead] = useState<CreateLeadData>({
-    source_id: null,
+  // Form data
+  const [formData, setFormData] = useState<CreateLeadData>({
     first_name: "",
     last_name: "",
     email: "",
     phone: "",
     company_name: "",
     industry: "",
-    lead_value: null,
+    lead_value: undefined,
     status: "new",
     priority: "medium",
+    source_id: undefined,
     expected_close_date: "",
     notes: "",
   })
+
+  const [assignUserId, setAssignUserId] = useState<number | undefined>(0)
+
+  const { toast } = useToast()
 
   useEffect(() => {
     fetchLeads()
@@ -152,7 +169,7 @@ export default function LeadsPage() {
       const data = await response.json()
       setLeads(data.leads || [])
       setTotalPages(data.pagination?.totalPages || 1)
-      setTotalCount(data.pagination?.total || 0)
+      setTotalCount(data.pagination?.totalCount || 0)
     } catch (error) {
       console.error("Error fetching leads:", error)
       toast({
@@ -193,10 +210,7 @@ export default function LeadsPage() {
       const response = await fetch("/api/leads", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...newLead,
-          lead_value: newLead.lead_value ? Number(newLead.lead_value) : null,
-        }),
+        body: JSON.stringify(formData),
       })
 
       if (!response.ok) {
@@ -210,25 +224,13 @@ export default function LeadsPage() {
       })
 
       setIsAddDialogOpen(false)
-      setNewLead({
-        source_id: null,
-        first_name: "",
-        last_name: "",
-        email: "",
-        phone: "",
-        company_name: "",
-        industry: "",
-        lead_value: null,
-        status: "new",
-        priority: "medium",
-        expected_close_date: "",
-        notes: "",
-      })
+      resetForm()
       fetchLeads()
-    } catch (error: any) {
+    } catch (error) {
+      console.error("Error creating lead:", error)
       toast({
         title: "Error",
-        description: error.message,
+        description: error instanceof Error ? error.message : "Failed to create lead",
         variant: "destructive",
       })
     } finally {
@@ -244,7 +246,7 @@ export default function LeadsPage() {
       const response = await fetch(`/api/leads/${selectedLead.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(selectedLead),
+        body: JSON.stringify(formData),
       })
 
       if (!response.ok) {
@@ -259,11 +261,13 @@ export default function LeadsPage() {
 
       setIsEditDialogOpen(false)
       setSelectedLead(null)
+      resetForm()
       fetchLeads()
-    } catch (error: any) {
+    } catch (error) {
+      console.error("Error updating lead:", error)
       toast({
         title: "Error",
-        description: error.message,
+        description: error instanceof Error ? error.message : "Failed to update lead",
         variant: "destructive",
       })
     } finally {
@@ -289,10 +293,11 @@ export default function LeadsPage() {
       })
 
       fetchLeads()
-    } catch (error: any) {
+    } catch (error) {
+      console.error("Error deleting lead:", error)
       toast({
         title: "Error",
-        description: error.message,
+        description: error instanceof Error ? error.message : "Failed to delete lead",
         variant: "destructive",
       })
     } finally {
@@ -301,17 +306,14 @@ export default function LeadsPage() {
   }
 
   const handleAssignLead = async () => {
-    if (!selectedLead || !selectedUserId) return
+    if (!selectedLead || !assignUserId) return
 
     try {
       setActionLoading("assign")
       const response = await fetch(`/api/leads/${selectedLead.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...selectedLead,
-          assigned_to: Number(selectedUserId),
-        }),
+        body: JSON.stringify({ assigned_to: assignUserId }),
       })
 
       if (!response.ok) {
@@ -326,17 +328,60 @@ export default function LeadsPage() {
 
       setIsAssignDialogOpen(false)
       setSelectedLead(null)
-      setSelectedUserId("")
+      setAssignUserId(undefined)
       fetchLeads()
-    } catch (error: any) {
+    } catch (error) {
+      console.error("Error assigning lead:", error)
       toast({
         title: "Error",
-        description: error.message,
+        description: error instanceof Error ? error.message : "Failed to assign lead",
         variant: "destructive",
       })
     } finally {
       setActionLoading(null)
     }
+  }
+
+  const resetForm = () => {
+    setFormData({
+      first_name: "",
+      last_name: "",
+      email: "",
+      phone: "",
+      company_name: "",
+      industry: "",
+      lead_value: undefined,
+      status: "new",
+      priority: "medium",
+      source_id: undefined,
+      expected_close_date: "",
+      notes: "",
+    })
+  }
+
+  const openEditDialog = (lead: Lead) => {
+    setSelectedLead(lead)
+    setFormData({
+      source_id: lead.source_id,
+      first_name: lead.first_name,
+      last_name: lead.last_name,
+      email: lead.email || "",
+      phone: lead.phone || "",
+      company_name: lead.company_name || "",
+      industry: lead.industry || "",
+      lead_value: lead.lead_value,
+      status: lead.status,
+      priority: lead.priority,
+      expected_close_date: lead.expected_close_date || "",
+      notes: lead.notes || "",
+    })
+    setIsEditDialogOpen(true)
+  }
+
+  const openAssignDialog = (lead: Lead) => {
+    setSelectedLead(lead)
+    setAssignUserId(lead.assigned_to || 0)
+    setIsAssignDialogOpen(true)
   }
 
   const clearFilters = () => {
@@ -347,7 +392,7 @@ export default function LeadsPage() {
     setCurrentPage(1)
   }
 
-  const formatCurrency = (value: number | null) => {
+  const formatCurrency = (value?: number) => {
     if (!value) return "-"
     return new Intl.NumberFormat("en-IN", {
       style: "currency",
@@ -356,25 +401,21 @@ export default function LeadsPage() {
     }).format(value)
   }
 
-  const formatDate = (dateString: string | null) => {
+  const formatDate = (dateString?: string) => {
     if (!dateString) return "-"
-    try {
-      return format(new Date(dateString), "MMM dd, yyyy")
-    } catch {
-      return "-"
-    }
+    return new Date(dateString).toLocaleDateString("en-IN")
   }
 
   return (
     <div className="p-6 space-y-6">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+      <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Lead Management</h1>
-          <p className="text-muted-foreground">Manage and track your sales leads ({totalCount} total)</p>
+          <h1 className="text-3xl font-bold">Lead Management</h1>
+          <p className="text-muted-foreground">Manage and track your sales leads</p>
         </div>
         <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
           <DialogTrigger asChild>
-            <Button>
+            <Button onClick={() => setIsAddDialogOpen(true)}>
               <Plus className="mr-2 h-4 w-4" />
               Add New Lead
             </Button>
@@ -383,13 +424,13 @@ export default function LeadsPage() {
             <DialogHeader>
               <DialogTitle>Add New Lead</DialogTitle>
             </DialogHeader>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="first_name">First Name *</Label>
                 <Input
                   id="first_name"
-                  value={newLead.first_name}
-                  onChange={(e) => setNewLead({ ...newLead, first_name: e.target.value })}
+                  value={formData.first_name}
+                  onChange={(e) => setFormData({ ...formData, first_name: e.target.value })}
                   placeholder="Enter first name"
                 />
               </div>
@@ -397,8 +438,8 @@ export default function LeadsPage() {
                 <Label htmlFor="last_name">Last Name *</Label>
                 <Input
                   id="last_name"
-                  value={newLead.last_name}
-                  onChange={(e) => setNewLead({ ...newLead, last_name: e.target.value })}
+                  value={formData.last_name}
+                  onChange={(e) => setFormData({ ...formData, last_name: e.target.value })}
                   placeholder="Enter last name"
                 />
               </div>
@@ -407,8 +448,8 @@ export default function LeadsPage() {
                 <Input
                   id="email"
                   type="email"
-                  value={newLead.email}
-                  onChange={(e) => setNewLead({ ...newLead, email: e.target.value })}
+                  value={formData.email}
+                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                   placeholder="Enter email"
                 />
               </div>
@@ -416,8 +457,8 @@ export default function LeadsPage() {
                 <Label htmlFor="phone">Phone</Label>
                 <Input
                   id="phone"
-                  value={newLead.phone}
-                  onChange={(e) => setNewLead({ ...newLead, phone: e.target.value })}
+                  value={formData.phone}
+                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                   placeholder="Enter phone number"
                 />
               </div>
@@ -425,8 +466,8 @@ export default function LeadsPage() {
                 <Label htmlFor="company_name">Company</Label>
                 <Input
                   id="company_name"
-                  value={newLead.company_name}
-                  onChange={(e) => setNewLead({ ...newLead, company_name: e.target.value })}
+                  value={formData.company_name}
+                  onChange={(e) => setFormData({ ...formData, company_name: e.target.value })}
                   placeholder="Enter company name"
                 />
               </div>
@@ -434,16 +475,28 @@ export default function LeadsPage() {
                 <Label htmlFor="industry">Industry</Label>
                 <Input
                   id="industry"
-                  value={newLead.industry}
-                  onChange={(e) => setNewLead({ ...newLead, industry: e.target.value })}
+                  value={formData.industry}
+                  onChange={(e) => setFormData({ ...formData, industry: e.target.value })}
                   placeholder="Enter industry"
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="source_id">Lead Source</Label>
+                <Label htmlFor="lead_value">Lead Value (₹)</Label>
+                <Input
+                  id="lead_value"
+                  type="number"
+                  value={formData.lead_value || ""}
+                  onChange={(e) =>
+                    setFormData({ ...formData, lead_value: e.target.value ? Number(e.target.value) : undefined })
+                  }
+                  placeholder="Enter lead value"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="source">Lead Source</Label>
                 <Select
-                  value={newLead.source_id?.toString() || "0"}
-                  onValueChange={(value) => setNewLead({ ...newLead, source_id: value ? Number(value) : null })}
+                  value={formData.source_id?.toString() || "0"}
+                  onValueChange={(value) => setFormData({ ...formData, source_id: value ? Number(value) : undefined })}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Select source" />
@@ -458,20 +511,8 @@ export default function LeadsPage() {
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="lead_value">Lead Value (₹)</Label>
-                <Input
-                  id="lead_value"
-                  type="number"
-                  value={newLead.lead_value || ""}
-                  onChange={(e) =>
-                    setNewLead({ ...newLead, lead_value: e.target.value ? Number(e.target.value) : null })
-                  }
-                  placeholder="Enter lead value"
-                />
-              </div>
-              <div className="space-y-2">
                 <Label htmlFor="status">Status</Label>
-                <Select value={newLead.status} onValueChange={(value) => setNewLead({ ...newLead, status: value })}>
+                <Select value={formData.status} onValueChange={(value) => setFormData({ ...formData, status: value })}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
@@ -481,14 +522,17 @@ export default function LeadsPage() {
                     <SelectItem value="qualified">Qualified</SelectItem>
                     <SelectItem value="proposal">Proposal</SelectItem>
                     <SelectItem value="negotiation">Negotiation</SelectItem>
-                    <SelectItem value="won">Won</SelectItem>
-                    <SelectItem value="lost">Lost</SelectItem>
+                    <SelectItem value="closed-won">Closed Won</SelectItem>
+                    <SelectItem value="closed-lost">Closed Lost</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="priority">Priority</Label>
-                <Select value={newLead.priority} onValueChange={(value) => setNewLead({ ...newLead, priority: value })}>
+                <Select
+                  value={formData.priority}
+                  onValueChange={(value) => setFormData({ ...formData, priority: value })}
+                >
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
@@ -500,12 +544,21 @@ export default function LeadsPage() {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-2 md:col-span-2">
+              <div className="space-y-2">
+                <Label htmlFor="expected_close_date">Expected Close Date</Label>
+                <Input
+                  id="expected_close_date"
+                  type="date"
+                  value={formData.expected_close_date}
+                  onChange={(e) => setFormData({ ...formData, expected_close_date: e.target.value })}
+                />
+              </div>
+              <div className="col-span-2 space-y-2">
                 <Label htmlFor="notes">Notes</Label>
                 <Textarea
                   id="notes"
-                  value={newLead.notes}
-                  onChange={(e) => setNewLead({ ...newLead, notes: e.target.value })}
+                  value={formData.notes}
+                  onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
                   placeholder="Enter notes"
                   rows={3}
                 />
@@ -515,7 +568,10 @@ export default function LeadsPage() {
               <Button variant="outline" onClick={() => setIsAddDialogOpen(false)}>
                 Cancel
               </Button>
-              <Button onClick={handleCreateLead} disabled={actionLoading === "create"}>
+              <Button
+                onClick={handleCreateLead}
+                disabled={!formData.first_name || !formData.last_name || actionLoading === "create"}
+              >
                 {actionLoading === "create" ? "Creating..." : "Create Lead"}
               </Button>
             </div>
@@ -525,10 +581,16 @@ export default function LeadsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Leads</CardTitle>
-          <div className="flex flex-col sm:flex-row gap-4">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+          <CardTitle className="flex items-center justify-between">
+            <span>Leads ({totalCount})</span>
+            <Button variant="outline" size="sm" onClick={fetchLeads}>
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Refresh
+            </Button>
+          </CardTitle>
+          <div className="flex flex-wrap gap-4">
+            <div className="relative flex-1 min-w-[200px]">
+              <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
               <Input
                 placeholder="Search leads..."
                 value={search}
@@ -537,7 +599,7 @@ export default function LeadsPage() {
               />
             </div>
             <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-full sm:w-48">
+              <SelectTrigger className="w-48">
                 <SelectValue placeholder="Filter by status" />
               </SelectTrigger>
               <SelectContent>
@@ -547,12 +609,12 @@ export default function LeadsPage() {
                 <SelectItem value="qualified">Qualified</SelectItem>
                 <SelectItem value="proposal">Proposal</SelectItem>
                 <SelectItem value="negotiation">Negotiation</SelectItem>
-                <SelectItem value="won">Won</SelectItem>
-                <SelectItem value="lost">Lost</SelectItem>
+                <SelectItem value="closed-won">Closed Won</SelectItem>
+                <SelectItem value="closed-lost">Closed Lost</SelectItem>
               </SelectContent>
             </Select>
             <Select value={sourceFilter} onValueChange={setSourceFilter}>
-              <SelectTrigger className="w-full sm:w-48">
+              <SelectTrigger className="w-48">
                 <SelectValue placeholder="Filter by source" />
               </SelectTrigger>
               <SelectContent>
@@ -565,7 +627,7 @@ export default function LeadsPage() {
               </SelectContent>
             </Select>
             <Select value={assignedToFilter} onValueChange={setAssignedToFilter}>
-              <SelectTrigger className="w-full sm:w-48">
+              <SelectTrigger className="w-48">
                 <SelectValue placeholder="Filter by assignee" />
               </SelectTrigger>
               <SelectContent>
@@ -578,15 +640,12 @@ export default function LeadsPage() {
                 ))}
               </SelectContent>
             </Select>
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={clearFilters}>
+            {(search || statusFilter || sourceFilter || assignedToFilter) && (
+              <Button variant="outline" onClick={clearFilters}>
                 <X className="h-4 w-4 mr-2" />
                 Clear
               </Button>
-              <Button variant="outline" size="sm" onClick={fetchLeads}>
-                <RefreshCw className="h-4 w-4" />
-              </Button>
-            </div>
+            )}
           </div>
         </CardHeader>
         <CardContent>
@@ -630,14 +689,22 @@ export default function LeadsPage() {
                         <TableCell>{lead.company_name || "-"}</TableCell>
                         <TableCell>{lead.source_name || "-"}</TableCell>
                         <TableCell>
-                          <Badge className={statusColors[lead.status as keyof typeof statusColors]}>
-                            {lead.status.charAt(0).toUpperCase() + lead.status.slice(1)}
+                          <Badge
+                            variant="outline"
+                            className={
+                              statusColors[lead.status as keyof typeof statusColors] || "bg-gray-100 text-gray-800"
+                            }
+                          >
+                            {lead.status.replace("-", " ").replace(/\b\w/g, (l) => l.toUpperCase())}
                           </Badge>
                         </TableCell>
                         <TableCell>
                           <Badge
                             variant="outline"
-                            className={priorityColors[lead.priority as keyof typeof priorityColors]}
+                            className={
+                              priorityColors[lead.priority as keyof typeof priorityColors] ||
+                              "bg-gray-100 text-gray-800"
+                            }
                           >
                             {lead.priority.charAt(0).toUpperCase() + lead.priority.slice(1)}
                           </Badge>
@@ -646,32 +713,17 @@ export default function LeadsPage() {
                         <TableCell>{formatDate(lead.expected_close_date)}</TableCell>
                         <TableCell>{formatCurrency(lead.lead_value)}</TableCell>
                         <TableCell>
-                          <div className="flex gap-1">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => {
-                                setSelectedLead(lead)
-                                setIsEditDialogOpen(true)
-                              }}
-                            >
-                              <Edit className="h-3 w-3" />
+                          <div className="flex gap-2">
+                            <Button size="sm" variant="outline" onClick={() => openEditDialog(lead)}>
+                              <Edit className="h-4 w-4" />
                             </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => {
-                                setSelectedLead(lead)
-                                setSelectedUserId(lead.assigned_to?.toString() || "0")
-                                setIsAssignDialogOpen(true)
-                              }}
-                            >
-                              <UserPlus className="h-3 w-3" />
+                            <Button size="sm" variant="outline" onClick={() => openAssignDialog(lead)}>
+                              <AssignIcon className="h-4 w-4" />
                             </Button>
                             <AlertDialog>
                               <AlertDialogTrigger asChild>
                                 <Button size="sm" variant="outline">
-                                  <Trash2 className="h-3 w-3" />
+                                  <Trash2 className="h-4 w-4" />
                                 </Button>
                               </AlertDialogTrigger>
                               <AlertDialogContent>
@@ -700,30 +752,37 @@ export default function LeadsPage() {
                 </Table>
               </div>
 
-              {/* Pagination */}
-              <div className="flex items-center justify-between pt-4">
-                <div className="text-sm text-muted-foreground">
-                  Showing {(currentPage - 1) * 10 + 1} to {Math.min(currentPage * 10, totalCount)} of {totalCount} leads
+              {totalPages > 1 && (
+                <div className="flex items-center justify-between mt-4">
+                  <p className="text-sm text-muted-foreground">
+                    Showing {(currentPage - 1) * 10 + 1} to {Math.min(currentPage * 10, totalCount)} of {totalCount}{" "}
+                    leads
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+                      disabled={currentPage === 1}
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                      Previous
+                    </Button>
+                    <span className="text-sm">
+                      Page {currentPage} of {totalPages}
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
+                      disabled={currentPage === totalPages}
+                    >
+                      Next
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </div>
-                <div className="flex gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
-                    disabled={currentPage === 1}
-                  >
-                    Previous
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
-                    disabled={currentPage === totalPages}
-                  >
-                    Next
-                  </Button>
-                </div>
-              </div>
+              )}
             </>
           )}
         </CardContent>
@@ -735,110 +794,154 @@ export default function LeadsPage() {
           <DialogHeader>
             <DialogTitle>Edit Lead</DialogTitle>
           </DialogHeader>
-          {selectedLead && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="edit_first_name">First Name *</Label>
-                <Input
-                  id="edit_first_name"
-                  value={selectedLead.first_name}
-                  onChange={(e) => setSelectedLead({ ...selectedLead, first_name: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="edit_last_name">Last Name *</Label>
-                <Input
-                  id="edit_last_name"
-                  value={selectedLead.last_name}
-                  onChange={(e) => setSelectedLead({ ...selectedLead, last_name: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="edit_email">Email</Label>
-                <Input
-                  id="edit_email"
-                  type="email"
-                  value={selectedLead.email || ""}
-                  onChange={(e) => setSelectedLead({ ...selectedLead, email: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="edit_phone">Phone</Label>
-                <Input
-                  id="edit_phone"
-                  value={selectedLead.phone || ""}
-                  onChange={(e) => setSelectedLead({ ...selectedLead, phone: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="edit_company_name">Company</Label>
-                <Input
-                  id="edit_company_name"
-                  value={selectedLead.company_name || ""}
-                  onChange={(e) => setSelectedLead({ ...selectedLead, company_name: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="edit_industry">Industry</Label>
-                <Input
-                  id="edit_industry"
-                  value={selectedLead.industry || ""}
-                  onChange={(e) => setSelectedLead({ ...selectedLead, industry: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="edit_status">Status</Label>
-                <Select
-                  value={selectedLead.status}
-                  onValueChange={(value) => setSelectedLead({ ...selectedLead, status: value })}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="new">New</SelectItem>
-                    <SelectItem value="contacted">Contacted</SelectItem>
-                    <SelectItem value="qualified">Qualified</SelectItem>
-                    <SelectItem value="proposal">Proposal</SelectItem>
-                    <SelectItem value="negotiation">Negotiation</SelectItem>
-                    <SelectItem value="won">Won</SelectItem>
-                    <SelectItem value="lost">Lost</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="edit_priority">Priority</Label>
-                <Select
-                  value={selectedLead.priority}
-                  onValueChange={(value) => setSelectedLead({ ...selectedLead, priority: value })}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="low">Low</SelectItem>
-                    <SelectItem value="medium">Medium</SelectItem>
-                    <SelectItem value="high">High</SelectItem>
-                    <SelectItem value="urgent">Urgent</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2 md:col-span-2">
-                <Label htmlFor="edit_notes">Notes</Label>
-                <Textarea
-                  id="edit_notes"
-                  value={selectedLead.notes || ""}
-                  onChange={(e) => setSelectedLead({ ...selectedLead, notes: e.target.value })}
-                  rows={3}
-                />
-              </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="edit_first_name">First Name *</Label>
+              <Input
+                id="edit_first_name"
+                value={formData.first_name}
+                onChange={(e) => setFormData({ ...formData, first_name: e.target.value })}
+                placeholder="Enter first name"
+              />
             </div>
-          )}
+            <div className="space-y-2">
+              <Label htmlFor="edit_last_name">Last Name *</Label>
+              <Input
+                id="edit_last_name"
+                value={formData.last_name}
+                onChange={(e) => setFormData({ ...formData, last_name: e.target.value })}
+                placeholder="Enter last name"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit_email">Email</Label>
+              <Input
+                id="edit_email"
+                type="email"
+                value={formData.email}
+                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                placeholder="Enter email"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit_phone">Phone</Label>
+              <Input
+                id="edit_phone"
+                value={formData.phone}
+                onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                placeholder="Enter phone number"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit_company_name">Company</Label>
+              <Input
+                id="edit_company_name"
+                value={formData.company_name}
+                onChange={(e) => setFormData({ ...formData, company_name: e.target.value })}
+                placeholder="Enter company name"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit_industry">Industry</Label>
+              <Input
+                id="edit_industry"
+                value={formData.industry}
+                onChange={(e) => setFormData({ ...formData, industry: e.target.value })}
+                placeholder="Enter industry"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit_lead_value">Lead Value (₹)</Label>
+              <Input
+                id="edit_lead_value"
+                type="number"
+                value={formData.lead_value || ""}
+                onChange={(e) =>
+                  setFormData({ ...formData, lead_value: e.target.value ? Number(e.target.value) : undefined })
+                }
+                placeholder="Enter lead value"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit_source">Lead Source</Label>
+              <Select
+                value={formData.source_id?.toString() || "0"}
+                onValueChange={(value) => setFormData({ ...formData, source_id: value ? Number(value) : undefined })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select source" />
+                </SelectTrigger>
+                <SelectContent>
+                  {leadSources.map((source) => (
+                    <SelectItem key={source.id} value={source.id.toString()}>
+                      {source.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit_status">Status</Label>
+              <Select value={formData.status} onValueChange={(value) => setFormData({ ...formData, status: value })}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="new">New</SelectItem>
+                  <SelectItem value="contacted">Contacted</SelectItem>
+                  <SelectItem value="qualified">Qualified</SelectItem>
+                  <SelectItem value="proposal">Proposal</SelectItem>
+                  <SelectItem value="negotiation">Negotiation</SelectItem>
+                  <SelectItem value="closed-won">Closed Won</SelectItem>
+                  <SelectItem value="closed-lost">Closed Lost</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit_priority">Priority</Label>
+              <Select
+                value={formData.priority}
+                onValueChange={(value) => setFormData({ ...formData, priority: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="low">Low</SelectItem>
+                  <SelectItem value="medium">Medium</SelectItem>
+                  <SelectItem value="high">High</SelectItem>
+                  <SelectItem value="urgent">Urgent</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit_expected_close_date">Expected Close Date</Label>
+              <Input
+                id="edit_expected_close_date"
+                type="date"
+                value={formData.expected_close_date}
+                onChange={(e) => setFormData({ ...formData, expected_close_date: e.target.value })}
+              />
+            </div>
+            <div className="col-span-2 space-y-2">
+              <Label htmlFor="edit_notes">Notes</Label>
+              <Textarea
+                id="edit_notes"
+                value={formData.notes}
+                onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                placeholder="Enter notes"
+                rows={3}
+              />
+            </div>
+          </div>
           <div className="flex justify-end gap-2 pt-4">
             <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={handleUpdateLead} disabled={actionLoading === "update"}>
+            <Button
+              onClick={handleUpdateLead}
+              disabled={!formData.first_name || !formData.last_name || actionLoading === "update"}
+            >
               {actionLoading === "update" ? "Updating..." : "Update Lead"}
             </Button>
           </div>
@@ -860,7 +963,10 @@ export default function LeadsPage() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="assign_user">Assign To</Label>
-              <Select value={selectedUserId} onValueChange={setSelectedUserId}>
+              <Select
+                value={assignUserId?.toString() || "0"}
+                onValueChange={(value) => setAssignUserId(value ? Number(value) : undefined)}
+              >
                 <SelectTrigger>
                   <SelectValue placeholder="Select user" />
                 </SelectTrigger>

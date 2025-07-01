@@ -29,6 +29,7 @@ import {
 
 const routes = [
   {
+    id: "dashboard",
     label: "Dashboard",
     icon: LayoutDashboard,
     href: "/",
@@ -36,6 +37,7 @@ const routes = [
     resource: "dashboard",
   },
   {
+    id: "claims",
     label: "Claims",
     icon: FileText,
     href: "/claims",
@@ -43,6 +45,7 @@ const routes = [
     resource: "claims",
   },
   {
+    id: "customers",
     label: "Customer 360",
     icon: Users,
     href: "/customers",
@@ -50,6 +53,7 @@ const routes = [
     resource: "customers",
   },
   {
+    id: "policies",
     label: "Policies",
     icon: ClipboardList,
     href: "/policies",
@@ -57,6 +61,7 @@ const routes = [
     resource: "policies",
   },
   {
+    id: "vehicles",
     label: "Vehicles",
     icon: Car,
     href: "/vehicles",
@@ -64,6 +69,7 @@ const routes = [
     resource: "vehicles",
   },
   {
+    id: "policy-holders",
     label: "Policy Holders",
     icon: Users,
     href: "/policy-holders",
@@ -71,6 +77,7 @@ const routes = [
     resource: "policy-holders",
   },
   {
+    id: "surveyors",
     label: "Surveyors",
     icon: UserCheck,
     href: "/surveyors",
@@ -78,6 +85,7 @@ const routes = [
     resource: "surveyors",
   },
   {
+    id: "payments",
     label: "Payments",
     icon: CreditCard,
     href: "/payments",
@@ -85,6 +93,15 @@ const routes = [
     resource: "payments",
   },
   {
+    id: "leads",
+    label: "Leads",
+    icon: UserPlus,
+    href: "/leads",
+    color: "text-purple-500",
+    resource: "leads",
+  },
+  {
+    id: "sales",
     label: "Sales",
     icon: TrendingUp,
     href: "https://preproduction.iceinsurance.in/login?domain=https://posp.haritaib.com",
@@ -93,13 +110,7 @@ const routes = [
     external: true,
   },
   {
-    label: "Leads",
-    icon: UserPlus,
-    href: "/leads",
-    color: "text-purple-500",
-    resource: "leads",
-  },
-  {
+    id: "posp-onboarding",
     label: "POSP Onboarding",
     icon: Shield,
     href: "https://preproduction.iceinsurance.in/login?domain=https://posp.haritaib.com",
@@ -108,6 +119,7 @@ const routes = [
     external: true,
   },
   {
+    id: "misp-onboarding",
     label: "MISP Onboarding",
     icon: FileCheck,
     href: "https://v0-hib-misp.vercel.app/login",
@@ -116,6 +128,7 @@ const routes = [
     external: true,
   },
   {
+    id: "reporting",
     label: "Reporting",
     icon: BarChart3,
     href: "https://preproduction.iceinsurance.in/login?domain=https://posp.haritaib.com",
@@ -124,6 +137,7 @@ const routes = [
     external: true,
   },
   {
+    id: "commissions",
     label: "Commissions",
     icon: DollarSign,
     href: "https://preproduction.iceinsurance.in/login?domain=https://posp.haritaib.com",
@@ -132,6 +146,7 @@ const routes = [
     external: true,
   },
   {
+    id: "corporate-business",
     label: "Corporate Business",
     icon: Building2,
     href: "https://bprisk.org",
@@ -140,6 +155,7 @@ const routes = [
     external: true,
   },
   {
+    id: "pnlpulse",
     label: "PNLPulse",
     icon: PieChart,
     href: "https://v0-ensuredit-sales-dashboard.vercel.app/dashboard",
@@ -148,6 +164,7 @@ const routes = [
     external: true,
   },
   {
+    id: "ticketing",
     label: "Ticketing",
     icon: Ticket,
     href: "https://ticketing.ensuredit.com/#login",
@@ -156,6 +173,7 @@ const routes = [
     external: true,
   },
   {
+    id: "settings",
     label: "Settings",
     icon: Settings,
     href: "/settings",
@@ -185,7 +203,7 @@ export default function Sidebar() {
             {authorizedRoutes.map((route) =>
               route.external ? (
                 <a
-                  key={route.href}
+                  key={route.id}
                   href={route.href}
                   target="_blank"
                   rel="noopener noreferrer"
@@ -200,7 +218,7 @@ export default function Sidebar() {
                 </a>
               ) : (
                 <Link
-                  key={route.href}
+                  key={route.id}
                   href={route.href}
                   className={cn(
                     "text-sm group flex p-3 w-full justify-start font-medium cursor-pointer hover:text-white hover:bg-white/10 rounded-lg transition",
