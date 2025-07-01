@@ -95,10 +95,9 @@ const routes = [
   {
     label: "Leads",
     icon: UserPlus,
-    href: "https://preproduction.iceinsurance.in/login?domain=https://posp.haritaib.com",
+    href: "/leads",
     color: "text-purple-500",
     resource: "leads",
-    external: true,
   },
   {
     label: "POSP Onboarding",
