@@ -1,32 +1,33 @@
 "use client"
 
+import type React from "react"
+
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
-import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog"
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog"
+import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Textarea } from "@/components/ui/textarea"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Trash2, Edit, UserPlus, Search, Filter, Plus, MoreHorizontal } from "lucide-react"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { useToast } from "@/hooks/use-toast"
-import { Plus, Search, Edit, Trash2, UserPlus, ChevronLeft, ChevronRight, RefreshCw, X, Loader2 } from "lucide-react"
 
 interface Lead {
   id: number
   lead_number: string
+  source_id?: number
   first_name: string
   last_name: string
   email?: string
@@ -34,16 +35,16 @@ interface Lead {
   company_name?: string
   industry?: string
   lead_value?: number
-  source_name?: string
-  source_id?: number
-  status: string
-  priority: string
-  assigned_user_name?: string
+  status: "new" | "contacted" | "qualified" | "proposal" | "negotiation" | "won" | "lost"
+  priority: "low" | "medium" | "high" | "urgent"
   assigned_to?: number
+  assigned_at?: string
   expected_close_date?: string
   notes?: string
   created_at: string
   updated_at: string
+  source_name?: string
+  assigned_user_name?: string
 }
 
 interface LeadSource {
@@ -60,36 +61,33 @@ interface User {
   role: string
 }
 
-interface CreateLeadData {
-  source_id?: number
-  first_name: string
-  last_name: string
-  email?: string
-  phone?: string
-  company_name?: string
-  industry?: string
-  lead_value?: number
-  status: string
-  priority: string
-  expected_close_date?: string
-  notes?: string
+interface PaginatedResponse {
+  leads: Lead[]
+  pagination: {
+    page: number
+    limit: number
+    total: number
+    totalPages: number
+    hasNext: boolean
+    hasPrev: boolean
+  }
 }
 
 const statusColors = {
-  new: "bg-blue-100 text-blue-800 border-blue-200",
-  contacted: "bg-yellow-100 text-yellow-800 border-yellow-200",
-  qualified: "bg-orange-100 text-orange-800 border-orange-200",
-  proposal: "bg-purple-100 text-purple-800 border-purple-200",
-  negotiation: "bg-indigo-100 text-indigo-800 border-indigo-200",
-  won: "bg-green-100 text-green-800 border-green-200",
-  lost: "bg-red-100 text-red-800 border-red-200",
+  new: "bg-blue-100 text-blue-800",
+  contacted: "bg-yellow-100 text-yellow-800",
+  qualified: "bg-orange-100 text-orange-800",
+  proposal: "bg-purple-100 text-purple-800",
+  negotiation: "bg-indigo-100 text-indigo-800",
+  won: "bg-green-100 text-green-800",
+  lost: "bg-red-100 text-red-800",
 }
 
 const priorityColors = {
-  low: "bg-gray-100 text-gray-800 border-gray-200",
-  medium: "bg-blue-100 text-blue-800 border-blue-200",
-  high: "bg-orange-100 text-orange-800 border-orange-200",
-  urgent: "bg-red-100 text-red-800 border-red-200",
+  low: "bg-gray-100 text-gray-800",
+  medium: "bg-blue-100 text-blue-800",
+  high: "bg-orange-100 text-orange-800",
+  urgent: "bg-red-100 text-red-800",
 }
 
 export default function LeadsPage() {
@@ -97,18 +95,20 @@ export default function LeadsPage() {
   const [leadSources, setLeadSources] = useState<LeadSource[]>([])
   const [users, setUsers] = useState<User[]>([])
   const [loading, setLoading] = useState(true)
-  const [actionLoading, setActionLoading] = useState<string | null>(null)
+  const [pagination, setPagination] = useState({
+    page: 1,
+    limit: 10,
+    total: 0,
+    totalPages: 0,
+    hasNext: false,
+    hasPrev: false,
+  })
 
-  // Filters and search
-  const [search, setSearch] = useState("")
+  // Filters
   const [statusFilter, setStatusFilter] = useState("all")
   const [sourceFilter, setSourceFilter] = useState("all")
-  const [assignedToFilter, setAssignedToFilter] = useState("all")
-
-  // Pagination
-  const [currentPage, setCurrentPage] = useState(1)
-  const [totalPages, setTotalPages] = useState(1)
-  const [totalCount, setTotalCount] = useState(0)
+  const [assigneeFilter, setAssigneeFilter] = useState("all")
+  const [searchQuery, setSearchQuery] = useState("")
 
   // Dialog states
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
@@ -117,49 +117,44 @@ export default function LeadsPage() {
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null)
 
   // Form data
-  const [formData, setFormData] = useState<CreateLeadData>({
+  const [formData, setFormData] = useState({
+    source_id: "",
     first_name: "",
     last_name: "",
     email: "",
     phone: "",
     company_name: "",
     industry: "",
-    lead_value: undefined,
-    status: "new",
-    priority: "medium",
-    source_id: undefined,
+    lead_value: "",
+    status: "new" as Lead["status"],
+    priority: "medium" as Lead["priority"],
+    assigned_to: "",
     expected_close_date: "",
     notes: "",
   })
 
-  const [assignUserId, setAssignUserId] = useState<number | undefined>(undefined)
-
   const { toast } = useToast()
 
-  useEffect(() => {
-    fetchLeads()
-    fetchLeadSources()
-    fetchUsers()
-  }, [search, statusFilter, sourceFilter, assignedToFilter, currentPage])
-
+  // Fetch leads
   const fetchLeads = async () => {
     try {
       setLoading(true)
-      const params = new URLSearchParams()
-      if (search) params.append("search", search)
-      if (statusFilter && statusFilter !== "all") params.append("status", statusFilter)
-      if (sourceFilter && sourceFilter !== "all") params.append("source_id", sourceFilter)
-      if (assignedToFilter && assignedToFilter !== "all") params.append("assigned_to", assignedToFilter)
-      params.append("page", currentPage.toString())
-      params.append("limit", "10")
+      const params = new URLSearchParams({
+        page: pagination.page.toString(),
+        limit: pagination.limit.toString(),
+      })
+
+      if (statusFilter !== "all") params.append("status", statusFilter)
+      if (sourceFilter !== "all") params.append("source_id", sourceFilter)
+      if (assigneeFilter !== "all") params.append("assigned_to", assigneeFilter)
+      if (searchQuery) params.append("search", searchQuery)
 
       const response = await fetch(`/api/leads?${params}`)
       if (!response.ok) throw new Error("Failed to fetch leads")
 
-      const data = await response.json()
-      setLeads(data.leads || [])
-      setTotalPages(data.pagination?.totalPages || 1)
-      setTotalCount(data.pagination?.total || 0)
+      const data: PaginatedResponse = await response.json()
+      setLeads(data.leads)
+      setPagination(data.pagination)
     } catch (error) {
       console.error("Error fetching leads:", error)
       toast({
@@ -172,6 +167,7 @@ export default function LeadsPage() {
     }
   }
 
+  // Fetch lead sources
   const fetchLeadSources = async () => {
     try {
       const response = await fetch("/api/lead-sources")
@@ -183,185 +179,157 @@ export default function LeadsPage() {
     }
   }
 
+  // Fetch users
   const fetchUsers = async () => {
     try {
       const response = await fetch("/api/users")
       if (!response.ok) throw new Error("Failed to fetch users")
       const data = await response.json()
-      setUsers(data || [])
+      setUsers(data.users || [])
     } catch (error) {
       console.error("Error fetching users:", error)
     }
   }
 
-  const handleCreateLead = async () => {
+  useEffect(() => {
+    fetchLeads()
+  }, [pagination.page, statusFilter, sourceFilter, assigneeFilter, searchQuery])
+
+  useEffect(() => {
+    fetchLeadSources()
+    fetchUsers()
+  }, [])
+
+  // Handle form submission
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+
     try {
-      setActionLoading("create")
-      const response = await fetch("/api/leads", {
-        method: "POST",
+      const submitData = {
+        ...formData,
+        source_id: formData.source_id ? Number.parseInt(formData.source_id) : undefined,
+        assigned_to: formData.assigned_to ? Number.parseInt(formData.assigned_to) : undefined,
+        lead_value: formData.lead_value ? Number.parseFloat(formData.lead_value) : undefined,
+      }
+
+      const url = selectedLead ? `/api/leads/${selectedLead.id}` : "/api/leads"
+      const method = selectedLead ? "PUT" : "POST"
+
+      const response = await fetch(url, {
+        method,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(submitData),
       })
 
       if (!response.ok) {
         const error = await response.json()
-        throw new Error(error.error || "Failed to create lead")
+        throw new Error(error.error || "Failed to save lead")
       }
 
       toast({
         title: "Success",
-        description: "Lead created successfully",
+        description: `Lead ${selectedLead ? "updated" : "created"} successfully`,
       })
 
       setIsAddDialogOpen(false)
-      resetForm()
-      fetchLeads()
-    } catch (error) {
-      console.error("Error creating lead:", error)
-      toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Failed to create lead",
-        variant: "destructive",
-      })
-    } finally {
-      setActionLoading(null)
-    }
-  }
-
-  const handleUpdateLead = async () => {
-    if (!selectedLead) return
-
-    try {
-      setActionLoading("update")
-      const response = await fetch(`/api/leads/${selectedLead.id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData),
-      })
-
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || "Failed to update lead")
-      }
-
-      toast({
-        title: "Success",
-        description: "Lead updated successfully",
-      })
-
       setIsEditDialogOpen(false)
-      setSelectedLead(null)
       resetForm()
       fetchLeads()
     } catch (error) {
-      console.error("Error updating lead:", error)
+      console.error("Error saving lead:", error)
       toast({
         title: "Error",
-        description: error instanceof Error ? error.message : "Failed to update lead",
+        description: error instanceof Error ? error.message : "Failed to save lead",
         variant: "destructive",
       })
-    } finally {
-      setActionLoading(null)
     }
   }
 
-  const handleDeleteLead = async (leadId: number) => {
-    try {
-      setActionLoading(`delete-${leadId}`)
-      const response = await fetch(`/api/leads/${leadId}`, {
-        method: "DELETE",
-      })
+  // Handle delete
+  const handleDelete = async (id: number) => {
+    if (!confirm("Are you sure you want to delete this lead?")) return
 
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || "Failed to delete lead")
-      }
+    try {
+      const response = await fetch(`/api/leads/${id}`, { method: "DELETE" })
+      if (!response.ok) throw new Error("Failed to delete lead")
 
       toast({
         title: "Success",
         description: "Lead deleted successfully",
       })
-
       fetchLeads()
     } catch (error) {
       console.error("Error deleting lead:", error)
       toast({
         title: "Error",
-        description: error instanceof Error ? error.message : "Failed to delete lead",
+        description: "Failed to delete lead",
         variant: "destructive",
       })
-    } finally {
-      setActionLoading(null)
     }
   }
 
-  const handleAssignLead = async () => {
-    if (!selectedLead || assignUserId === undefined) return
+  // Handle assign
+  const handleAssign = async (userId: number) => {
+    if (!selectedLead) return
 
     try {
-      setActionLoading("assign")
       const response = await fetch(`/api/leads/${selectedLead.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ assigned_to: assignUserId === 0 ? null : assignUserId }),
+        body: JSON.stringify({ assigned_to: userId }),
       })
 
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || "Failed to assign lead")
-      }
+      if (!response.ok) throw new Error("Failed to assign lead")
 
       toast({
         title: "Success",
         description: "Lead assigned successfully",
       })
-
       setIsAssignDialogOpen(false)
-      setSelectedLead(null)
-      setAssignUserId(undefined)
       fetchLeads()
     } catch (error) {
       console.error("Error assigning lead:", error)
       toast({
         title: "Error",
-        description: error instanceof Error ? error.message : "Failed to assign lead",
+        description: "Failed to assign lead",
         variant: "destructive",
       })
-    } finally {
-      setActionLoading(null)
     }
   }
 
   const resetForm = () => {
     setFormData({
-      source_id: undefined,
+      source_id: "",
       first_name: "",
       last_name: "",
       email: "",
       phone: "",
       company_name: "",
       industry: "",
-      lead_value: undefined,
+      lead_value: "",
       status: "new",
       priority: "medium",
+      assigned_to: "",
       expected_close_date: "",
       notes: "",
     })
+    setSelectedLead(null)
   }
 
   const openEditDialog = (lead: Lead) => {
     setSelectedLead(lead)
     setFormData({
-      source_id: lead.source_id,
+      source_id: lead.source_id?.toString() || "",
       first_name: lead.first_name,
       last_name: lead.last_name,
       email: lead.email || "",
       phone: lead.phone || "",
       company_name: lead.company_name || "",
       industry: lead.industry || "",
-      lead_value: lead.lead_value,
+      lead_value: lead.lead_value?.toString() || "",
       status: lead.status,
       priority: lead.priority,
+      assigned_to: lead.assigned_to?.toString() || "",
       expected_close_date: lead.expected_close_date || "",
       notes: lead.notes || "",
     })
@@ -370,30 +338,18 @@ export default function LeadsPage() {
 
   const openAssignDialog = (lead: Lead) => {
     setSelectedLead(lead)
-    setAssignUserId(lead.assigned_to || 0)
     setIsAssignDialogOpen(true)
   }
 
   const clearFilters = () => {
-    setSearch("")
     setStatusFilter("all")
     setSourceFilter("all")
-    setAssignedToFilter("all")
-    setCurrentPage(1)
+    setAssigneeFilter("all")
+    setSearchQuery("")
   }
 
-  const formatCurrency = (value?: number) => {
-    if (!value) return "-"
-    return new Intl.NumberFormat("en-IN", {
-      style: "currency",
-      currency: "INR",
-      minimumFractionDigits: 0,
-    }).format(value)
-  }
-
-  const formatDate = (dateString?: string) => {
-    if (!dateString) return "-"
-    return new Date(dateString).toLocaleDateString("en-IN")
+  if (loading) {
+    return <div className="p-6">Loading leads...</div>
   }
 
   return (
@@ -405,94 +361,472 @@ export default function LeadsPage() {
         </div>
         <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
           <DialogTrigger asChild>
-            <Button>
-              <Plus className="mr-2 h-4 w-4" />
+            <Button onClick={resetForm}>
+              <Plus className="h-4 w-4 mr-2" />
               Add New Lead
             </Button>
           </DialogTrigger>
-          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogContent className="max-w-2xl">
             <DialogHeader>
               <DialogTitle>Add New Lead</DialogTitle>
+              <DialogDescription>Create a new lead in the system</DialogDescription>
             </DialogHeader>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="first_name">First Name *</Label>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="first_name">First Name *</Label>
+                  <Input
+                    id="first_name"
+                    value={formData.first_name}
+                    onChange={(e) => setFormData({ ...formData, first_name: e.target.value })}
+                    required
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="last_name">Last Name *</Label>
+                  <Input
+                    id="last_name"
+                    value={formData.last_name}
+                    onChange={(e) => setFormData({ ...formData, last_name: e.target.value })}
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="email">Email</Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    value={formData.email}
+                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="phone">Phone</Label>
+                  <Input
+                    id="phone"
+                    value={formData.phone}
+                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="company_name">Company</Label>
+                  <Input
+                    id="company_name"
+                    value={formData.company_name}
+                    onChange={(e) => setFormData({ ...formData, company_name: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="industry">Industry</Label>
+                  <Input
+                    id="industry"
+                    value={formData.industry}
+                    onChange={(e) => setFormData({ ...formData, industry: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="lead_value">Lead Value</Label>
+                  <Input
+                    id="lead_value"
+                    type="number"
+                    step="0.01"
+                    value={formData.lead_value}
+                    onChange={(e) => setFormData({ ...formData, lead_value: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="source_id">Source</Label>
+                  <Select
+                    value={formData.source_id}
+                    onValueChange={(value) => setFormData({ ...formData, source_id: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select source" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {leadSources.map((source) => (
+                        <SelectItem key={source.id} value={source.id.toString()}>
+                          {source.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-4">
+                <div>
+                  <Label htmlFor="status">Status</Label>
+                  <Select
+                    value={formData.status}
+                    onValueChange={(value: Lead["status"]) => setFormData({ ...formData, status: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="new">New</SelectItem>
+                      <SelectItem value="contacted">Contacted</SelectItem>
+                      <SelectItem value="qualified">Qualified</SelectItem>
+                      <SelectItem value="proposal">Proposal</SelectItem>
+                      <SelectItem value="negotiation">Negotiation</SelectItem>
+                      <SelectItem value="won">Won</SelectItem>
+                      <SelectItem value="lost">Lost</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label htmlFor="priority">Priority</Label>
+                  <Select
+                    value={formData.priority}
+                    onValueChange={(value: Lead["priority"]) => setFormData({ ...formData, priority: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="low">Low</SelectItem>
+                      <SelectItem value="medium">Medium</SelectItem>
+                      <SelectItem value="high">High</SelectItem>
+                      <SelectItem value="urgent">Urgent</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label htmlFor="assigned_to">Assign To</Label>
+                  <Select
+                    value={formData.assigned_to}
+                    onValueChange={(value) => setFormData({ ...formData, assigned_to: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select user" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {users.map((user) => (
+                        <SelectItem key={user.id} value={user.id.toString()}>
+                          {user.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div>
+                <Label htmlFor="expected_close_date">Expected Close Date</Label>
                 <Input
-                  id="first_name"
+                  id="expected_close_date"
+                  type="date"
+                  value={formData.expected_close_date}
+                  onChange={(e) => setFormData({ ...formData, expected_close_date: e.target.value })}
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="notes">Notes</Label>
+                <Textarea
+                  id="notes"
+                  value={formData.notes}
+                  onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                  rows={3}
+                />
+              </div>
+
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setIsAddDialogOpen(false)}>
+                  Cancel
+                </Button>
+                <Button type="submit">Create Lead</Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+      </div>
+
+      {/* Filters */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Filter className="h-5 w-5" />
+            Filters
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div>
+              <Label>Search</Label>
+              <div className="relative">
+                <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search leads..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-10"
+                />
+              </div>
+            </div>
+            <div>
+              <Label>Status</Label>
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Statuses</SelectItem>
+                  <SelectItem value="new">New</SelectItem>
+                  <SelectItem value="contacted">Contacted</SelectItem>
+                  <SelectItem value="qualified">Qualified</SelectItem>
+                  <SelectItem value="proposal">Proposal</SelectItem>
+                  <SelectItem value="negotiation">Negotiation</SelectItem>
+                  <SelectItem value="won">Won</SelectItem>
+                  <SelectItem value="lost">Lost</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Source</Label>
+              <Select value={sourceFilter} onValueChange={setSourceFilter}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Sources</SelectItem>
+                  {leadSources.map((source) => (
+                    <SelectItem key={source.id} value={source.id.toString()}>
+                      {source.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Assignee</Label>
+              <Select value={assigneeFilter} onValueChange={setAssigneeFilter}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Assignees</SelectItem>
+                  <SelectItem value="unassigned">Unassigned</SelectItem>
+                  {users.map((user) => (
+                    <SelectItem key={user.id} value={user.id.toString()}>
+                      {user.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="flex justify-end mt-4">
+            <Button variant="outline" onClick={clearFilters}>
+              Clear Filters
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Leads Table */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Leads ({pagination.total})</CardTitle>
+          <CardDescription>Manage your sales leads and track their progress</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Lead #</TableHead>
+                <TableHead>Name</TableHead>
+                <TableHead>Company</TableHead>
+                <TableHead>Source</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Priority</TableHead>
+                <TableHead>Assigned To</TableHead>
+                <TableHead>Expected Close</TableHead>
+                <TableHead>Value</TableHead>
+                <TableHead>Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {leads.map((lead) => (
+                <TableRow key={lead.id}>
+                  <TableCell className="font-medium">{lead.lead_number}</TableCell>
+                  <TableCell>
+                    <div>
+                      <div className="font-medium">
+                        {lead.first_name} {lead.last_name}
+                      </div>
+                      {lead.email && <div className="text-sm text-muted-foreground">{lead.email}</div>}
+                    </div>
+                  </TableCell>
+                  <TableCell>{lead.company_name || "-"}</TableCell>
+                  <TableCell>{lead.source_name || "-"}</TableCell>
+                  <TableCell>
+                    <Badge className={statusColors[lead.status]}>{lead.status}</Badge>
+                  </TableCell>
+                  <TableCell>
+                    <Badge className={priorityColors[lead.priority]}>{lead.priority}</Badge>
+                  </TableCell>
+                  <TableCell>{lead.assigned_user_name || "Unassigned"}</TableCell>
+                  <TableCell>{lead.expected_close_date || "-"}</TableCell>
+                  <TableCell>{lead.lead_value ? `$${lead.lead_value.toLocaleString()}` : "-"}</TableCell>
+                  <TableCell>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="sm">
+                          <MoreHorizontal className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => openEditDialog(lead)}>
+                          <Edit className="h-4 w-4 mr-2" />
+                          Edit
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => openAssignDialog(lead)}>
+                          <UserPlus className="h-4 w-4 mr-2" />
+                          Assign
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleDelete(lead.id)} className="text-red-600">
+                          <Trash2 className="h-4 w-4 mr-2" />
+                          Delete
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+
+          {/* Pagination */}
+          <div className="flex items-center justify-between mt-4">
+            <div className="text-sm text-muted-foreground">
+              Showing {(pagination.page - 1) * pagination.limit + 1} to{" "}
+              {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total} results
+            </div>
+            <div className="flex items-center space-x-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setPagination({ ...pagination, page: pagination.page - 1 })}
+                disabled={!pagination.hasPrev}
+              >
+                Previous
+              </Button>
+              <div className="text-sm">
+                Page {pagination.page} of {pagination.totalPages}
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setPagination({ ...pagination, page: pagination.page + 1 })}
+                disabled={!pagination.hasNext}
+              >
+                Next
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Edit Dialog */}
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Edit Lead</DialogTitle>
+            <DialogDescription>Update lead information</DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="edit_first_name">First Name *</Label>
+                <Input
+                  id="edit_first_name"
                   value={formData.first_name}
                   onChange={(e) => setFormData({ ...formData, first_name: e.target.value })}
-                  placeholder="Enter first name"
+                  required
                 />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="last_name">Last Name *</Label>
+              <div>
+                <Label htmlFor="edit_last_name">Last Name *</Label>
                 <Input
-                  id="last_name"
+                  id="edit_last_name"
                   value={formData.last_name}
                   onChange={(e) => setFormData({ ...formData, last_name: e.target.value })}
-                  placeholder="Enter last name"
+                  required
                 />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="edit_email">Email</Label>
                 <Input
-                  id="email"
+                  id="edit_email"
                   type="email"
                   value={formData.email}
                   onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                  placeholder="Enter email"
                 />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="phone">Phone</Label>
+              <div>
+                <Label htmlFor="edit_phone">Phone</Label>
                 <Input
-                  id="phone"
+                  id="edit_phone"
                   value={formData.phone}
                   onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                  placeholder="Enter phone number"
                 />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="company_name">Company</Label>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="edit_company_name">Company</Label>
                 <Input
-                  id="company_name"
+                  id="edit_company_name"
                   value={formData.company_name}
                   onChange={(e) => setFormData({ ...formData, company_name: e.target.value })}
-                  placeholder="Enter company name"
                 />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="industry">Industry</Label>
+              <div>
+                <Label htmlFor="edit_industry">Industry</Label>
                 <Input
-                  id="industry"
+                  id="edit_industry"
                   value={formData.industry}
                   onChange={(e) => setFormData({ ...formData, industry: e.target.value })}
-                  placeholder="Enter industry"
                 />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="lead_value">Lead Value (₹)</Label>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="edit_lead_value">Lead Value</Label>
                 <Input
-                  id="lead_value"
+                  id="edit_lead_value"
                   type="number"
-                  value={formData.lead_value || ""}
-                  onChange={(e) =>
-                    setFormData({ ...formData, lead_value: e.target.value ? Number(e.target.value) : undefined })
-                  }
-                  placeholder="Enter lead value"
+                  step="0.01"
+                  value={formData.lead_value}
+                  onChange={(e) => setFormData({ ...formData, lead_value: e.target.value })}
                 />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="source">Lead Source</Label>
+              <div>
+                <Label htmlFor="edit_source_id">Source</Label>
                 <Select
-                  value={formData.source_id?.toString() || "none"}
-                  onValueChange={(value) => setFormData({ ...formData, source_id: value ? Number(value) : undefined })}
+                  value={formData.source_id}
+                  onValueChange={(value) => setFormData({ ...formData, source_id: value })}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Select source" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="none">Select source</SelectItem>
                     {leadSources.map((source) => (
                       <SelectItem key={source.id} value={source.id.toString()}>
                         {source.name}
@@ -501,9 +835,15 @@ export default function LeadsPage() {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="status">Status</Label>
-                <Select value={formData.status} onValueChange={(value) => setFormData({ ...formData, status: value })}>
+            </div>
+
+            <div className="grid grid-cols-3 gap-4">
+              <div>
+                <Label htmlFor="edit_status">Status</Label>
+                <Select
+                  value={formData.status}
+                  onValueChange={(value: Lead["status"]) => setFormData({ ...formData, status: value })}
+                >
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
@@ -518,11 +858,11 @@ export default function LeadsPage() {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="priority">Priority</Label>
+              <div>
+                <Label htmlFor="edit_priority">Priority</Label>
                 <Select
                   value={formData.priority}
-                  onValueChange={(value) => setFormData({ ...formData, priority: value })}
+                  onValueChange={(value: Lead["priority"]) => setFormData({ ...formData, priority: value })}
                 >
                   <SelectTrigger>
                     <SelectValue />
@@ -535,386 +875,27 @@ export default function LeadsPage() {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="expected_close_date">Expected Close Date</Label>
-                <Input
-                  id="expected_close_date"
-                  type="date"
-                  value={formData.expected_close_date}
-                  onChange={(e) => setFormData({ ...formData, expected_close_date: e.target.value })}
-                />
-              </div>
-              <div className="col-span-2 space-y-2">
-                <Label htmlFor="notes">Notes</Label>
-                <Textarea
-                  id="notes"
-                  value={formData.notes}
-                  onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                  placeholder="Enter notes"
-                  rows={3}
-                />
-              </div>
-            </div>
-            <div className="flex justify-end gap-2 pt-4">
-              <Button variant="outline" onClick={() => setIsAddDialogOpen(false)}>
-                Cancel
-              </Button>
-              <Button
-                onClick={handleCreateLead}
-                disabled={!formData.first_name || !formData.last_name || actionLoading === "create"}
-              >
-                {actionLoading === "create" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Create Lead
-              </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
-      </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center justify-between">
-            <span>Leads ({totalCount})</span>
-            <Button variant="outline" size="sm" onClick={fetchLeads}>
-              <RefreshCw className="h-4 w-4 mr-2" />
-              Refresh
-            </Button>
-          </CardTitle>
-          <div className="flex flex-wrap gap-4">
-            <div className="relative flex-1 min-w-[200px]">
-              <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
-              <Input
-                placeholder="Search leads..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="pl-10"
-              />
-            </div>
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-48">
-                <SelectValue placeholder="Filter by status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Statuses</SelectItem>
-                <SelectItem value="new">New</SelectItem>
-                <SelectItem value="contacted">Contacted</SelectItem>
-                <SelectItem value="qualified">Qualified</SelectItem>
-                <SelectItem value="proposal">Proposal</SelectItem>
-                <SelectItem value="negotiation">Negotiation</SelectItem>
-                <SelectItem value="won">Won</SelectItem>
-                <SelectItem value="lost">Lost</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={sourceFilter} onValueChange={setSourceFilter}>
-              <SelectTrigger className="w-48">
-                <SelectValue placeholder="Filter by source" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Sources</SelectItem>
-                {leadSources.map((source) => (
-                  <SelectItem key={source.id} value={source.id.toString()}>
-                    {source.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select value={assignedToFilter} onValueChange={setAssignedToFilter}>
-              <SelectTrigger className="w-48">
-                <SelectValue placeholder="Filter by assignee" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Assignees</SelectItem>
-                <SelectItem value="unassigned">Unassigned</SelectItem>
-                {users.map((user) => (
-                  <SelectItem key={user.id} value={user.id.toString()}>
-                    {user.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {(search || statusFilter !== "all" || sourceFilter !== "all" || assignedToFilter !== "all") && (
-              <Button variant="outline" onClick={clearFilters}>
-                <X className="h-4 w-4 mr-2" />
-                Clear
-              </Button>
-            )}
-          </div>
-        </CardHeader>
-        <CardContent>
-          {loading ? (
-            <div className="text-center py-8">
-              <Loader2 className="h-8 w-8 animate-spin mx-auto" />
-              <p className="mt-2 text-muted-foreground">Loading leads...</p>
-            </div>
-          ) : leads.length === 0 ? (
-            <div className="text-center py-8">
-              <p className="text-muted-foreground">No leads found</p>
-              <Button className="mt-4" onClick={() => setIsAddDialogOpen(true)}>
-                <Plus className="mr-2 h-4 w-4" />
-                Add Your First Lead
-              </Button>
-            </div>
-          ) : (
-            <>
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Lead Number</TableHead>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Company</TableHead>
-                      <TableHead>Source</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Priority</TableHead>
-                      <TableHead>Assigned To</TableHead>
-                      <TableHead>Expected Close</TableHead>
-                      <TableHead>Value</TableHead>
-                      <TableHead>Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {leads.map((lead) => (
-                      <TableRow key={lead.id}>
-                        <TableCell className="font-medium">{lead.lead_number}</TableCell>
-                        <TableCell>
-                          <div>
-                            <div className="font-medium">{`${lead.first_name} ${lead.last_name}`}</div>
-                            {lead.email && <div className="text-sm text-muted-foreground">{lead.email}</div>}
-                          </div>
-                        </TableCell>
-                        <TableCell>{lead.company_name || "-"}</TableCell>
-                        <TableCell>{lead.source_name || "-"}</TableCell>
-                        <TableCell>
-                          <Badge
-                            variant="outline"
-                            className={
-                              statusColors[lead.status as keyof typeof statusColors] || "bg-gray-100 text-gray-800"
-                            }
-                          >
-                            {lead.status.charAt(0).toUpperCase() + lead.status.slice(1)}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <Badge
-                            variant="outline"
-                            className={
-                              priorityColors[lead.priority as keyof typeof priorityColors] ||
-                              "bg-gray-100 text-gray-800"
-                            }
-                          >
-                            {lead.priority.charAt(0).toUpperCase() + lead.priority.slice(1)}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>{lead.assigned_user_name || "Unassigned"}</TableCell>
-                        <TableCell>{formatDate(lead.expected_close_date)}</TableCell>
-                        <TableCell>{formatCurrency(lead.lead_value)}</TableCell>
-                        <TableCell>
-                          <div className="flex gap-2">
-                            <Button size="sm" variant="outline" onClick={() => openEditDialog(lead)}>
-                              <Edit className="h-4 w-4" />
-                            </Button>
-                            <Button size="sm" variant="outline" onClick={() => openAssignDialog(lead)}>
-                              <UserPlus className="h-4 w-4" />
-                            </Button>
-                            <AlertDialog>
-                              <AlertDialogTrigger asChild>
-                                <Button size="sm" variant="outline">
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              </AlertDialogTrigger>
-                              <AlertDialogContent>
-                                <AlertDialogHeader>
-                                  <AlertDialogTitle>Delete Lead</AlertDialogTitle>
-                                  <AlertDialogDescription>
-                                    Are you sure you want to delete this lead? This action cannot be undone.
-                                  </AlertDialogDescription>
-                                </AlertDialogHeader>
-                                <AlertDialogFooter>
-                                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                  <AlertDialogAction
-                                    onClick={() => handleDeleteLead(lead.id)}
-                                    disabled={actionLoading === `delete-${lead.id}`}
-                                  >
-                                    {actionLoading === `delete-${lead.id}` && (
-                                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                    )}
-                                    Delete
-                                  </AlertDialogAction>
-                                </AlertDialogFooter>
-                              </AlertDialogContent>
-                            </AlertDialog>
-                          </div>
-                        </TableCell>
-                      </TableRow>
+              <div>
+                <Label htmlFor="edit_assigned_to">Assign To</Label>
+                <Select
+                  value={formData.assigned_to}
+                  onValueChange={(value) => setFormData({ ...formData, assigned_to: value })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select user" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {users.map((user) => (
+                      <SelectItem key={user.id} value={user.id.toString()}>
+                        {user.name}
+                      </SelectItem>
                     ))}
-                  </TableBody>
-                </Table>
+                  </SelectContent>
+                </Select>
               </div>
+            </div>
 
-              {totalPages > 1 && (
-                <div className="flex items-center justify-between mt-4">
-                  <p className="text-sm text-muted-foreground">
-                    Showing {(currentPage - 1) * 10 + 1} to {Math.min(currentPage * 10, totalCount)} of {totalCount}{" "}
-                    leads
-                  </p>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
-                      disabled={currentPage === 1}
-                    >
-                      <ChevronLeft className="h-4 w-4" />
-                      Previous
-                    </Button>
-                    <span className="text-sm">
-                      Page {currentPage} of {totalPages}
-                    </span>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
-                      disabled={currentPage === totalPages}
-                    >
-                      Next
-                      <ChevronRight className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Edit Lead Dialog */}
-      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Edit Lead</DialogTitle>
-          </DialogHeader>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="edit_first_name">First Name *</Label>
-              <Input
-                id="edit_first_name"
-                value={formData.first_name}
-                onChange={(e) => setFormData({ ...formData, first_name: e.target.value })}
-                placeholder="Enter first name"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="edit_last_name">Last Name *</Label>
-              <Input
-                id="edit_last_name"
-                value={formData.last_name}
-                onChange={(e) => setFormData({ ...formData, last_name: e.target.value })}
-                placeholder="Enter last name"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="edit_email">Email</Label>
-              <Input
-                id="edit_email"
-                type="email"
-                value={formData.email}
-                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                placeholder="Enter email"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="edit_phone">Phone</Label>
-              <Input
-                id="edit_phone"
-                value={formData.phone}
-                onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                placeholder="Enter phone number"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="edit_company_name">Company</Label>
-              <Input
-                id="edit_company_name"
-                value={formData.company_name}
-                onChange={(e) => setFormData({ ...formData, company_name: e.target.value })}
-                placeholder="Enter company name"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="edit_industry">Industry</Label>
-              <Input
-                id="edit_industry"
-                value={formData.industry}
-                onChange={(e) => setFormData({ ...formData, industry: e.target.value })}
-                placeholder="Enter industry"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="edit_lead_value">Lead Value (₹)</Label>
-              <Input
-                id="edit_lead_value"
-                type="number"
-                value={formData.lead_value || ""}
-                onChange={(e) =>
-                  setFormData({ ...formData, lead_value: e.target.value ? Number(e.target.value) : undefined })
-                }
-                placeholder="Enter lead value"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="edit_source">Lead Source</Label>
-              <Select
-                value={formData.source_id?.toString() || "none"}
-                onValueChange={(value) => setFormData({ ...formData, source_id: value ? Number(value) : undefined })}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select source" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Select source</SelectItem>
-                  {leadSources.map((source) => (
-                    <SelectItem key={source.id} value={source.id.toString()}>
-                      {source.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="edit_status">Status</Label>
-              <Select value={formData.status} onValueChange={(value) => setFormData({ ...formData, status: value })}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="new">New</SelectItem>
-                  <SelectItem value="contacted">Contacted</SelectItem>
-                  <SelectItem value="qualified">Qualified</SelectItem>
-                  <SelectItem value="proposal">Proposal</SelectItem>
-                  <SelectItem value="negotiation">Negotiation</SelectItem>
-                  <SelectItem value="won">Won</SelectItem>
-                  <SelectItem value="lost">Lost</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="edit_priority">Priority</Label>
-              <Select
-                value={formData.priority}
-                onValueChange={(value) => setFormData({ ...formData, priority: value })}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="low">Low</SelectItem>
-                  <SelectItem value="medium">Medium</SelectItem>
-                  <SelectItem value="high">High</SelectItem>
-                  <SelectItem value="urgent">Urgent</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
+            <div>
               <Label htmlFor="edit_expected_close_date">Expected Close Date</Label>
               <Input
                 id="edit_expected_close_date"
@@ -923,73 +904,47 @@ export default function LeadsPage() {
                 onChange={(e) => setFormData({ ...formData, expected_close_date: e.target.value })}
               />
             </div>
-            <div className="col-span-2 space-y-2">
+
+            <div>
               <Label htmlFor="edit_notes">Notes</Label>
               <Textarea
                 id="edit_notes"
                 value={formData.notes}
                 onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                placeholder="Enter notes"
                 rows={3}
               />
             </div>
-          </div>
-          <div className="flex justify-end gap-2 pt-4">
-            <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={handleUpdateLead}
-              disabled={!formData.first_name || !formData.last_name || actionLoading === "update"}
-            >
-              {actionLoading === "update" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Update Lead
-            </Button>
-          </div>
+
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setIsEditDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit">Update Lead</Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
 
-      {/* Assign Lead Dialog */}
+      {/* Assign Dialog */}
       <Dialog open={isAssignDialogOpen} onOpenChange={setIsAssignDialogOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Assign Lead</DialogTitle>
+            <DialogDescription>
+              Assign {selectedLead?.first_name} {selectedLead?.last_name} to a team member
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
-            <div className="space-y-2">
-              <Label>Lead</Label>
-              <p className="text-sm text-muted-foreground">
-                {selectedLead && `${selectedLead.first_name} ${selectedLead.last_name} (${selectedLead.lead_number})`}
-              </p>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="assign_user">Assign To</Label>
-              <Select
-                value={assignUserId?.toString() || "0"}
-                onValueChange={(value) => setAssignUserId(value ? Number(value) : 0)}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select user" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="0">Unassigned</SelectItem>
-                  {users.map((user) => (
-                    <SelectItem key={user.id} value={user.id.toString()}>
-                      {user.name} ({user.role})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <div className="flex justify-end gap-2 pt-4">
-            <Button variant="outline" onClick={() => setIsAssignDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button onClick={handleAssignLead} disabled={actionLoading === "assign"}>
-              {actionLoading === "assign" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Assign Lead
-            </Button>
+            {users.map((user) => (
+              <div key={user.id} className="flex items-center justify-between p-3 border rounded-lg">
+                <div>
+                  <div className="font-medium">{user.name}</div>
+                  <div className="text-sm text-muted-foreground">{user.email}</div>
+                  <div className="text-xs text-muted-foreground">{user.role}</div>
+                </div>
+                <Button onClick={() => handleAssign(user.id)}>Assign</Button>
+              </div>
+            ))}
           </div>
         </DialogContent>
       </Dialog>
