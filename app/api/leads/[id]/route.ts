@@ -15,7 +15,7 @@ interface Lead {
   company_name?: string
   industry?: string
   lead_value?: number
-  status: "new" | "contacted" | "qualified" | "proposal" | "negotiation" | "closed_won" | "closed_lost"
+  status: "new" | "contacted" | "qualified" | "proposal" | "negotiation" | "won" | "lost"
   priority: "low" | "medium" | "high" | "urgent"
   assigned_to?: number
   assigned_at?: string
@@ -27,6 +27,7 @@ interface Lead {
 
 interface LeadWithRelations extends Lead {
   source_name?: string
+  source_description?: string
   assigned_user_name?: string
   assigned_user_email?: string
 }
@@ -40,97 +41,39 @@ interface UpdateLeadRequest {
   company_name?: string
   industry?: string
   lead_value?: number
-  status?: "new" | "contacted" | "qualified" | "proposal" | "negotiation" | "closed_won" | "closed_lost"
-  priority?: "low" | "medium" | "high" | "urgent"
+  status?: Lead["status"]
+  priority?: Lead["priority"]
   assigned_to?: number
   expected_close_date?: string
   notes?: string
 }
 
 // Validation functions
-function isValidEmail(email: string): boolean {
+const validateEmail = (email: string): boolean => {
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
   return emailRegex.test(email)
 }
 
-function isValidPhone(phone: string): boolean {
+const validatePhone = (phone: string): boolean => {
   const phoneRegex = /^[+]?[1-9][\d]{0,15}$/
   return phoneRegex.test(phone.replace(/[\s\-$$$$]/g, ""))
 }
 
-function isValidStatus(status: string): boolean {
-  const validStatuses = ["new", "contacted", "qualified", "proposal", "negotiation", "closed_won", "closed_lost"]
-  return validStatuses.includes(status)
+const validateLeadValue = (value: number): boolean => {
+  return value >= 0 && value <= 999999999
 }
 
-function isValidPriority(priority: string): boolean {
-  const validPriorities = ["low", "medium", "high", "urgent"]
-  return validPriorities.includes(priority)
+const validateStatus = (status: string): status is Lead["status"] => {
+  return ["new", "contacted", "qualified", "proposal", "negotiation", "won", "lost"].includes(status)
 }
 
-function isValidDate(dateString: string): boolean {
+const validatePriority = (priority: string): priority is Lead["priority"] => {
+  return ["low", "medium", "high", "urgent"].includes(priority)
+}
+
+const validateDate = (dateString: string): boolean => {
   const date = new Date(dateString)
-  return !isNaN(date.getTime()) && dateString === date.toISOString().split("T")[0]
-}
-
-function validateUpdateData(data: UpdateLeadRequest): string[] {
-  const errors: string[] = []
-
-  if (data.first_name !== undefined && (!data.first_name || data.first_name.trim().length === 0)) {
-    errors.push("First name cannot be empty")
-  }
-
-  if (data.last_name !== undefined && (!data.last_name || data.last_name.trim().length === 0)) {
-    errors.push("Last name cannot be empty")
-  }
-
-  if (data.email !== undefined && data.email && !isValidEmail(data.email)) {
-    errors.push("Invalid email format")
-  }
-
-  if (data.phone !== undefined && data.phone && !isValidPhone(data.phone)) {
-    errors.push("Invalid phone number format")
-  }
-
-  if (
-    data.lead_value !== undefined &&
-    data.lead_value !== null &&
-    (data.lead_value < 0 || data.lead_value > 10000000)
-  ) {
-    errors.push("Lead value must be between 0 and 10,000,000")
-  }
-
-  if (data.status !== undefined && !isValidStatus(data.status)) {
-    errors.push(
-      "Invalid status. Must be one of: new, contacted, qualified, proposal, negotiation, closed_won, closed_lost",
-    )
-  }
-
-  if (data.priority !== undefined && !isValidPriority(data.priority)) {
-    errors.push("Invalid priority. Must be one of: low, medium, high, urgent")
-  }
-
-  if (data.expected_close_date !== undefined && data.expected_close_date && !isValidDate(data.expected_close_date)) {
-    errors.push("Invalid expected close date format. Use YYYY-MM-DD")
-  }
-
-  if (
-    data.source_id !== undefined &&
-    data.source_id !== null &&
-    (!Number.isInteger(data.source_id) || data.source_id <= 0)
-  ) {
-    errors.push("Source ID must be a positive integer")
-  }
-
-  if (
-    data.assigned_to !== undefined &&
-    data.assigned_to !== null &&
-    (!Number.isInteger(data.assigned_to) || data.assigned_to <= 0)
-  ) {
-    errors.push("Assigned to must be a positive integer")
-  }
-
-  return errors
+  return !isNaN(date.getTime()) && date > new Date("1900-01-01")
 }
 
 export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
@@ -145,6 +88,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
       SELECT 
         l.*,
         ls.name as source_name,
+        ls.description as source_description,
         u.name as assigned_user_name,
         u.email as assigned_user_email
       FROM leads l
@@ -178,73 +122,135 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
 
     const body: UpdateLeadRequest = await request.json()
 
-    // Validate the update data
-    const validationErrors = validateUpdateData(body)
-    if (validationErrors.length > 0) {
-      return NextResponse.json({ error: "Validation failed", details: validationErrors }, { status: 400 })
+    const {
+      source_id,
+      first_name,
+      last_name,
+      email,
+      phone,
+      company_name,
+      industry,
+      lead_value,
+      status,
+      priority,
+      assigned_to,
+      expected_close_date,
+      notes,
+    } = body
+
+    if (first_name !== undefined && (!first_name || first_name.length > 100)) {
+      return NextResponse.json(
+        { error: "First name is required and must be less than 100 characters" },
+        { status: 400 },
+      )
     }
 
-    // Check if lead exists
-    const existingLead = await sql("SELECT id FROM leads WHERE id = $1", [leadId])
-    if (existingLead.length === 0) {
-      return NextResponse.json({ error: "Lead not found" }, { status: 404 })
+    if (last_name !== undefined && (!last_name || last_name.length > 100)) {
+      return NextResponse.json({ error: "Last name is required and must be less than 100 characters" }, { status: 400 })
     }
 
-    // Validate foreign key constraints
-    if (body.source_id !== undefined && body.source_id !== null) {
-      const sourceExists = await sql("SELECT id FROM lead_sources WHERE id = $1", [body.source_id])
+    if (email !== undefined && email && !validateEmail(email)) {
+      return NextResponse.json({ error: "Invalid email format" }, { status: 400 })
+    }
+
+    if (phone !== undefined && phone && !validatePhone(phone)) {
+      return NextResponse.json({ error: "Invalid phone number format" }, { status: 400 })
+    }
+
+    if (lead_value !== undefined && lead_value !== null && !validateLeadValue(lead_value)) {
+      return NextResponse.json({ error: "Lead value must be between 0 and 999,999,999" }, { status: 400 })
+    }
+
+    if (status !== undefined && !validateStatus(status)) {
+      return NextResponse.json({ error: "Invalid status value" }, { status: 400 })
+    }
+
+    if (priority !== undefined && !validatePriority(priority)) {
+      return NextResponse.json({ error: "Invalid priority value" }, { status: 400 })
+    }
+
+    if (expected_close_date !== undefined && expected_close_date && !validateDate(expected_close_date)) {
+      return NextResponse.json({ error: "Invalid expected close date" }, { status: 400 })
+    }
+
+    if (email !== undefined && email) {
+      const duplicateCheck = await sql("SELECT id FROM leads WHERE email = $1 AND id != $2", [email, leadId])
+      if (duplicateCheck.length > 0) {
+        return NextResponse.json({ error: "A lead with this email already exists" }, { status: 409 })
+      }
+    }
+
+    if (source_id !== undefined && source_id !== null) {
+      const sourceExists = await sql("SELECT id FROM lead_sources WHERE id = $1 AND is_active = true", [source_id])
       if (sourceExists.length === 0) {
-        return NextResponse.json({ error: "Invalid source_id. Lead source does not exist." }, { status: 400 })
+        return NextResponse.json({ error: "Invalid or inactive lead source" }, { status: 400 })
       }
     }
 
-    if (body.assigned_to !== undefined && body.assigned_to !== null) {
-      const userExists = await sql("SELECT id FROM users WHERE id = $1", [body.assigned_to])
+    if (assigned_to !== undefined && assigned_to !== null) {
+      const userExists = await sql("SELECT id FROM users WHERE id = $1", [assigned_to])
       if (userExists.length === 0) {
-        return NextResponse.json({ error: "Invalid assigned_to. User does not exist." }, { status: 400 })
+        return NextResponse.json({ error: "Invalid assigned user" }, { status: 400 })
       }
     }
 
-    // Check for duplicate email if email is being updated
-    if (body.email) {
-      const duplicateEmail = await sql("SELECT id FROM leads WHERE email = $1 AND id != $2", [body.email, leadId])
-      if (duplicateEmail.length > 0) {
-        return NextResponse.json({ error: "Email already exists for another lead" }, { status: 409 })
-      }
-    }
-
-    // Build dynamic update query
     const updateFields: string[] = []
     const updateValues: any[] = []
-    let paramIndex = 1
+    let paramCount = 0
 
-    Object.entries(body).forEach(([key, value]) => {
+    const fieldsToUpdate = {
+      source_id,
+      first_name: first_name?.trim(),
+      last_name: last_name?.trim(),
+      email: email?.trim(),
+      phone: phone?.trim(),
+      company_name: company_name?.trim(),
+      industry: industry?.trim(),
+      lead_value,
+      status,
+      priority,
+      assigned_to,
+      expected_close_date,
+      notes: notes?.trim(),
+    }
+
+    const existingLead = await sql("SELECT * FROM leads WHERE id = $1", [leadId])
+    const currentLead = existingLead[0]
+    let shouldUpdateAssignedAt = false
+
+    if (assigned_to !== undefined && assigned_to !== currentLead.assigned_to) {
+      shouldUpdateAssignedAt = true
+    }
+
+    Object.entries(fieldsToUpdate).forEach(([key, value]) => {
       if (value !== undefined) {
-        updateFields.push(`${key} = $${paramIndex}`)
+        paramCount++
+        updateFields.push(`${key} = $${paramCount}`)
         updateValues.push(value)
-        paramIndex++
       }
     })
 
-    // Handle assignment timestamp
-    if (body.assigned_to !== undefined) {
-      updateFields.push(`assigned_at = $${paramIndex}`)
-      updateValues.push(body.assigned_to ? new Date().toISOString() : null)
-      paramIndex++
+    if (shouldUpdateAssignedAt) {
+      paramCount++
+      updateFields.push(`assigned_at = $${paramCount}`)
+      updateValues.push(assigned_to ? new Date().toISOString() : null)
     }
 
-    // Add updated_at timestamp
-    updateFields.push(`updated_at = $${paramIndex}`)
-    updateValues.push(new Date().toISOString())
-    paramIndex++
+    if (updateFields.length === 0) {
+      return NextResponse.json({ error: "No fields to update" }, { status: 400 })
+    }
 
-    // Add lead ID for WHERE clause
+    paramCount++
+    updateFields.push(`updated_at = $${paramCount}`)
+    updateValues.push(new Date().toISOString())
+
+    paramCount++
     updateValues.push(leadId)
 
     const updateQuery = `
       UPDATE leads 
       SET ${updateFields.join(", ")}
-      WHERE id = $${paramIndex}
+      WHERE id = $${paramCount}
       RETURNING *
     `
 
@@ -254,27 +260,32 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
       return NextResponse.json({ error: "Failed to update lead" }, { status: 500 })
     }
 
-    // Fetch the updated lead with related data
-    const updatedLeadQuery = `
+    const updatedLead = await sql(
+      `
       SELECT 
         l.*,
         ls.name as source_name,
-        u.name as assigned_user_name,
-        u.email as assigned_user_email
+        u.name as assigned_user_name
       FROM leads l
       LEFT JOIN lead_sources ls ON l.source_id = ls.id
       LEFT JOIN users u ON l.assigned_to = u.id
       WHERE l.id = $1
-    `
-
-    const updatedLead = await sql(updatedLeadQuery, [leadId])
+    `,
+      [leadId],
+    )
 
     return NextResponse.json(updatedLead[0])
   } catch (error) {
     console.error("Error updating lead:", error)
 
-    if (error instanceof Error && error.message.includes("foreign key constraint")) {
-      return NextResponse.json({ error: "Invalid reference to related data" }, { status: 400 })
+    if (error instanceof Error) {
+      if (error.message.includes("duplicate key")) {
+        return NextResponse.json({ error: "A lead with this information already exists" }, { status: 409 })
+      }
+
+      if (error.message.includes("foreign key")) {
+        return NextResponse.json({ error: "Invalid reference to related data" }, { status: 400 })
+      }
     }
 
     return NextResponse.json({ error: "Failed to update lead" }, { status: 500 })
@@ -289,17 +300,13 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
       return NextResponse.json({ error: "Invalid lead ID. Must be a positive integer." }, { status: 400 })
     }
 
-    // Check if lead exists and get its data before deletion
     const existingLead = await sql("SELECT * FROM leads WHERE id = $1", [leadId])
 
     if (existingLead.length === 0) {
       return NextResponse.json({ error: "Lead not found" }, { status: 404 })
     }
 
-    // Check for related records that might prevent deletion
-    // You might want to add checks for related tables like lead_activities, lead_notes, etc.
-
-    const result = await sql("DELETE FROM leads WHERE id = $1 RETURNING id", [leadId])
+    const result = await sql("DELETE FROM leads WHERE id = $1 RETURNING *", [leadId])
 
     if (result.length === 0) {
       return NextResponse.json({ error: "Failed to delete lead" }, { status: 500 })
@@ -308,19 +315,21 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
     return NextResponse.json({
       message: "Lead deleted successfully",
       deletedLead: {
-        id: existingLead[0].id,
-        lead_number: existingLead[0].lead_number,
-        name: `${existingLead[0].first_name} ${existingLead[0].last_name}`,
+        id: result[0].id,
+        lead_number: result[0].lead_number,
+        name: `${result[0].first_name} ${result[0].last_name}`,
       },
     })
   } catch (error) {
     console.error("Error deleting lead:", error)
 
-    if (error instanceof Error && error.message.includes("foreign key constraint")) {
-      return NextResponse.json(
-        { error: "Cannot delete lead. It has related records that must be removed first." },
-        { status: 409 },
-      )
+    if (error instanceof Error) {
+      if (error.message.includes("foreign key")) {
+        return NextResponse.json(
+          { error: "Cannot delete lead: it has related records that must be removed first" },
+          { status: 409 },
+        )
+      }
     }
 
     return NextResponse.json({ error: "Failed to delete lead" }, { status: 500 })

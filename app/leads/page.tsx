@@ -22,17 +22,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
 import { useToast } from "@/hooks/use-toast"
-import {
-  Plus,
-  Search,
-  Edit,
-  Trash2,
-  PresentationIcon as AssignIcon,
-  ChevronLeft,
-  ChevronRight,
-  RefreshCw,
-  X,
-} from "lucide-react"
+import { Plus, Search, Edit, Trash2, UserPlus, ChevronLeft, ChevronRight, RefreshCw, X, Loader2 } from "lucide-react"
 
 interface Lead {
   id: number
@@ -91,8 +81,8 @@ const statusColors = {
   qualified: "bg-orange-100 text-orange-800 border-orange-200",
   proposal: "bg-purple-100 text-purple-800 border-purple-200",
   negotiation: "bg-indigo-100 text-indigo-800 border-indigo-200",
-  "closed-won": "bg-green-100 text-green-800 border-green-200",
-  "closed-lost": "bg-red-100 text-red-800 border-red-200",
+  won: "bg-green-100 text-green-800 border-green-200",
+  lost: "bg-red-100 text-red-800 border-red-200",
 }
 
 const priorityColors = {
@@ -111,9 +101,9 @@ export default function LeadsPage() {
 
   // Filters and search
   const [search, setSearch] = useState("")
-  const [statusFilter, setStatusFilter] = useState("")
-  const [sourceFilter, setSourceFilter] = useState("")
-  const [assignedToFilter, setAssignedToFilter] = useState("")
+  const [statusFilter, setStatusFilter] = useState("all")
+  const [sourceFilter, setSourceFilter] = useState("all")
+  const [assignedToFilter, setAssignedToFilter] = useState("all")
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1)
@@ -142,7 +132,7 @@ export default function LeadsPage() {
     notes: "",
   })
 
-  const [assignUserId, setAssignUserId] = useState<number | undefined>(0)
+  const [assignUserId, setAssignUserId] = useState<number | undefined>(undefined)
 
   const { toast } = useToast()
 
@@ -157,9 +147,9 @@ export default function LeadsPage() {
       setLoading(true)
       const params = new URLSearchParams()
       if (search) params.append("search", search)
-      if (statusFilter) params.append("status", statusFilter)
-      if (sourceFilter) params.append("source_id", sourceFilter)
-      if (assignedToFilter) params.append("assigned_to", assignedToFilter)
+      if (statusFilter && statusFilter !== "all") params.append("status", statusFilter)
+      if (sourceFilter && sourceFilter !== "all") params.append("source_id", sourceFilter)
+      if (assignedToFilter && assignedToFilter !== "all") params.append("assigned_to", assignedToFilter)
       params.append("page", currentPage.toString())
       params.append("limit", "10")
 
@@ -169,7 +159,7 @@ export default function LeadsPage() {
       const data = await response.json()
       setLeads(data.leads || [])
       setTotalPages(data.pagination?.totalPages || 1)
-      setTotalCount(data.pagination?.totalCount || 0)
+      setTotalCount(data.pagination?.total || 0)
     } catch (error) {
       console.error("Error fetching leads:", error)
       toast({
@@ -306,14 +296,14 @@ export default function LeadsPage() {
   }
 
   const handleAssignLead = async () => {
-    if (!selectedLead || !assignUserId) return
+    if (!selectedLead || assignUserId === undefined) return
 
     try {
       setActionLoading("assign")
       const response = await fetch(`/api/leads/${selectedLead.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ assigned_to: assignUserId }),
+        body: JSON.stringify({ assigned_to: assignUserId === 0 ? null : assignUserId }),
       })
 
       if (!response.ok) {
@@ -344,6 +334,7 @@ export default function LeadsPage() {
 
   const resetForm = () => {
     setFormData({
+      source_id: undefined,
       first_name: "",
       last_name: "",
       email: "",
@@ -353,7 +344,6 @@ export default function LeadsPage() {
       lead_value: undefined,
       status: "new",
       priority: "medium",
-      source_id: undefined,
       expected_close_date: "",
       notes: "",
     })
@@ -386,9 +376,9 @@ export default function LeadsPage() {
 
   const clearFilters = () => {
     setSearch("")
-    setStatusFilter("")
-    setSourceFilter("")
-    setAssignedToFilter("")
+    setStatusFilter("all")
+    setSourceFilter("all")
+    setAssignedToFilter("all")
     setCurrentPage(1)
   }
 
@@ -415,7 +405,7 @@ export default function LeadsPage() {
         </div>
         <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
           <DialogTrigger asChild>
-            <Button onClick={() => setIsAddDialogOpen(true)}>
+            <Button>
               <Plus className="mr-2 h-4 w-4" />
               Add New Lead
             </Button>
@@ -495,13 +485,14 @@ export default function LeadsPage() {
               <div className="space-y-2">
                 <Label htmlFor="source">Lead Source</Label>
                 <Select
-                  value={formData.source_id?.toString() || "0"}
+                  value={formData.source_id?.toString() || "none"}
                   onValueChange={(value) => setFormData({ ...formData, source_id: value ? Number(value) : undefined })}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Select source" />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="none">Select source</SelectItem>
                     {leadSources.map((source) => (
                       <SelectItem key={source.id} value={source.id.toString()}>
                         {source.name}
@@ -522,8 +513,8 @@ export default function LeadsPage() {
                     <SelectItem value="qualified">Qualified</SelectItem>
                     <SelectItem value="proposal">Proposal</SelectItem>
                     <SelectItem value="negotiation">Negotiation</SelectItem>
-                    <SelectItem value="closed-won">Closed Won</SelectItem>
-                    <SelectItem value="closed-lost">Closed Lost</SelectItem>
+                    <SelectItem value="won">Won</SelectItem>
+                    <SelectItem value="lost">Lost</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -572,7 +563,8 @@ export default function LeadsPage() {
                 onClick={handleCreateLead}
                 disabled={!formData.first_name || !formData.last_name || actionLoading === "create"}
               >
-                {actionLoading === "create" ? "Creating..." : "Create Lead"}
+                {actionLoading === "create" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Create Lead
               </Button>
             </div>
           </DialogContent>
@@ -603,14 +595,14 @@ export default function LeadsPage() {
                 <SelectValue placeholder="Filter by status" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">All Statuses</SelectItem>
+                <SelectItem value="all">All Statuses</SelectItem>
                 <SelectItem value="new">New</SelectItem>
                 <SelectItem value="contacted">Contacted</SelectItem>
                 <SelectItem value="qualified">Qualified</SelectItem>
                 <SelectItem value="proposal">Proposal</SelectItem>
                 <SelectItem value="negotiation">Negotiation</SelectItem>
-                <SelectItem value="closed-won">Closed Won</SelectItem>
-                <SelectItem value="closed-lost">Closed Lost</SelectItem>
+                <SelectItem value="won">Won</SelectItem>
+                <SelectItem value="lost">Lost</SelectItem>
               </SelectContent>
             </Select>
             <Select value={sourceFilter} onValueChange={setSourceFilter}>
@@ -618,7 +610,7 @@ export default function LeadsPage() {
                 <SelectValue placeholder="Filter by source" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">All Sources</SelectItem>
+                <SelectItem value="all">All Sources</SelectItem>
                 {leadSources.map((source) => (
                   <SelectItem key={source.id} value={source.id.toString()}>
                     {source.name}
@@ -631,7 +623,7 @@ export default function LeadsPage() {
                 <SelectValue placeholder="Filter by assignee" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">All Assignees</SelectItem>
+                <SelectItem value="all">All Assignees</SelectItem>
                 <SelectItem value="unassigned">Unassigned</SelectItem>
                 {users.map((user) => (
                   <SelectItem key={user.id} value={user.id.toString()}>
@@ -640,7 +632,7 @@ export default function LeadsPage() {
                 ))}
               </SelectContent>
             </Select>
-            {(search || statusFilter || sourceFilter || assignedToFilter) && (
+            {(search || statusFilter !== "all" || sourceFilter !== "all" || assignedToFilter !== "all") && (
               <Button variant="outline" onClick={clearFilters}>
                 <X className="h-4 w-4 mr-2" />
                 Clear
@@ -651,12 +643,16 @@ export default function LeadsPage() {
         <CardContent>
           {loading ? (
             <div className="text-center py-8">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
+              <Loader2 className="h-8 w-8 animate-spin mx-auto" />
               <p className="mt-2 text-muted-foreground">Loading leads...</p>
             </div>
           ) : leads.length === 0 ? (
             <div className="text-center py-8">
               <p className="text-muted-foreground">No leads found</p>
+              <Button className="mt-4" onClick={() => setIsAddDialogOpen(true)}>
+                <Plus className="mr-2 h-4 w-4" />
+                Add Your First Lead
+              </Button>
             </div>
           ) : (
             <>
@@ -695,7 +691,7 @@ export default function LeadsPage() {
                               statusColors[lead.status as keyof typeof statusColors] || "bg-gray-100 text-gray-800"
                             }
                           >
-                            {lead.status.replace("-", " ").replace(/\b\w/g, (l) => l.toUpperCase())}
+                            {lead.status.charAt(0).toUpperCase() + lead.status.slice(1)}
                           </Badge>
                         </TableCell>
                         <TableCell>
@@ -718,7 +714,7 @@ export default function LeadsPage() {
                               <Edit className="h-4 w-4" />
                             </Button>
                             <Button size="sm" variant="outline" onClick={() => openAssignDialog(lead)}>
-                              <AssignIcon className="h-4 w-4" />
+                              <UserPlus className="h-4 w-4" />
                             </Button>
                             <AlertDialog>
                               <AlertDialogTrigger asChild>
@@ -739,7 +735,10 @@ export default function LeadsPage() {
                                     onClick={() => handleDeleteLead(lead.id)}
                                     disabled={actionLoading === `delete-${lead.id}`}
                                   >
-                                    {actionLoading === `delete-${lead.id}` ? "Deleting..." : "Delete"}
+                                    {actionLoading === `delete-${lead.id}` && (
+                                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                    )}
+                                    Delete
                                   </AlertDialogAction>
                                 </AlertDialogFooter>
                               </AlertDialogContent>
@@ -865,13 +864,14 @@ export default function LeadsPage() {
             <div className="space-y-2">
               <Label htmlFor="edit_source">Lead Source</Label>
               <Select
-                value={formData.source_id?.toString() || "0"}
+                value={formData.source_id?.toString() || "none"}
                 onValueChange={(value) => setFormData({ ...formData, source_id: value ? Number(value) : undefined })}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Select source" />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="none">Select source</SelectItem>
                   {leadSources.map((source) => (
                     <SelectItem key={source.id} value={source.id.toString()}>
                       {source.name}
@@ -892,8 +892,8 @@ export default function LeadsPage() {
                   <SelectItem value="qualified">Qualified</SelectItem>
                   <SelectItem value="proposal">Proposal</SelectItem>
                   <SelectItem value="negotiation">Negotiation</SelectItem>
-                  <SelectItem value="closed-won">Closed Won</SelectItem>
-                  <SelectItem value="closed-lost">Closed Lost</SelectItem>
+                  <SelectItem value="won">Won</SelectItem>
+                  <SelectItem value="lost">Lost</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -942,7 +942,8 @@ export default function LeadsPage() {
               onClick={handleUpdateLead}
               disabled={!formData.first_name || !formData.last_name || actionLoading === "update"}
             >
-              {actionLoading === "update" ? "Updating..." : "Update Lead"}
+              {actionLoading === "update" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Update Lead
             </Button>
           </div>
         </DialogContent>
@@ -965,7 +966,7 @@ export default function LeadsPage() {
               <Label htmlFor="assign_user">Assign To</Label>
               <Select
                 value={assignUserId?.toString() || "0"}
-                onValueChange={(value) => setAssignUserId(value ? Number(value) : undefined)}
+                onValueChange={(value) => setAssignUserId(value ? Number(value) : 0)}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Select user" />
@@ -986,7 +987,8 @@ export default function LeadsPage() {
               Cancel
             </Button>
             <Button onClick={handleAssignLead} disabled={actionLoading === "assign"}>
-              {actionLoading === "assign" ? "Assigning..." : "Assign Lead"}
+              {actionLoading === "assign" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Assign Lead
             </Button>
           </div>
         </DialogContent>
