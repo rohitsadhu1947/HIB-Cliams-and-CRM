@@ -41,6 +41,8 @@ interface Lead {
   assigned_at?: string
   expected_close_date?: string
   notes?: string
+  product_category?: string
+  product_subtype?: string
   created_at: string
   updated_at: string
   source_name?: string
@@ -73,6 +75,20 @@ interface PaginatedResponse {
   }
 }
 
+// Product categories and their subtypes
+const PRODUCT_CATEGORIES = {
+  Motor: ["2w", "4w", "CV"],
+  Health: ["Individual", "Family", "Group", "Critical Illness"],
+  Life: ["Term", "ULIP", "Endowment", "Others"],
+  Travel: ["Domestic", "International", "Student", "Business"],
+  Pet: ["Dog", "Cat", "Exotic"],
+  Cyber: ["Individual", "SME", "Corporate"],
+  Corporate: ["Property", "Liability", "Marine", "Engineering"],
+  Marine: ["Cargo", "Hull", "Liability"],
+} as const
+
+type ProductCategory = keyof typeof PRODUCT_CATEGORIES
+
 const statusColors = {
   new: "bg-blue-100 text-blue-800",
   contacted: "bg-yellow-100 text-yellow-800",
@@ -88,6 +104,17 @@ const priorityColors = {
   medium: "bg-blue-100 text-blue-800",
   high: "bg-orange-100 text-orange-800",
   urgent: "bg-red-100 text-red-800",
+}
+
+const productCategoryColors = {
+  Motor: "bg-red-100 text-red-800",
+  Health: "bg-green-100 text-green-800",
+  Life: "bg-blue-100 text-blue-800",
+  Travel: "bg-purple-100 text-purple-800",
+  Pet: "bg-pink-100 text-pink-800",
+  Cyber: "bg-gray-100 text-gray-800",
+  Corporate: "bg-indigo-100 text-indigo-800",
+  Marine: "bg-cyan-100 text-cyan-800",
 }
 
 export default function LeadsPage() {
@@ -108,6 +135,7 @@ export default function LeadsPage() {
   const [statusFilter, setStatusFilter] = useState("all")
   const [sourceFilter, setSourceFilter] = useState("all")
   const [assigneeFilter, setAssigneeFilter] = useState("all")
+  const [productCategoryFilter, setProductCategoryFilter] = useState("all")
   const [searchQuery, setSearchQuery] = useState("")
 
   // Dialog states
@@ -131,9 +159,17 @@ export default function LeadsPage() {
     assigned_to: "",
     expected_close_date: "",
     notes: "",
+    product_category: "",
+    product_subtype: "",
   })
 
   const { toast } = useToast()
+
+  // Get available subtypes based on selected category
+  const getAvailableSubtypes = (category: string): string[] => {
+    if (!category || !(category in PRODUCT_CATEGORIES)) return []
+    return PRODUCT_CATEGORIES[category as ProductCategory]
+  }
 
   // Fetch leads
   const fetchLeads = async () => {
@@ -147,6 +183,7 @@ export default function LeadsPage() {
       if (statusFilter !== "all") params.append("status", statusFilter)
       if (sourceFilter !== "all") params.append("source_id", sourceFilter)
       if (assigneeFilter !== "all") params.append("assigned_to", assigneeFilter)
+      if (productCategoryFilter !== "all") params.append("product_category", productCategoryFilter)
       if (searchQuery) params.append("search", searchQuery)
 
       const response = await fetch(`/api/leads?${params}`)
@@ -193,7 +230,7 @@ export default function LeadsPage() {
 
   useEffect(() => {
     fetchLeads()
-  }, [pagination.page, statusFilter, sourceFilter, assigneeFilter, searchQuery])
+  }, [pagination.page, statusFilter, sourceFilter, assigneeFilter, productCategoryFilter, searchQuery])
 
   useEffect(() => {
     fetchLeadSources()
@@ -276,7 +313,7 @@ export default function LeadsPage() {
       const response = await fetch(`/api/leads/${selectedLead.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ assigned_to: userId }),
+        body: JSON.stringify({ ...selectedLead, assigned_to: userId }),
       })
 
       if (!response.ok) throw new Error("Failed to assign lead")
@@ -312,6 +349,8 @@ export default function LeadsPage() {
       assigned_to: "",
       expected_close_date: "",
       notes: "",
+      product_category: "",
+      product_subtype: "",
     })
     setSelectedLead(null)
   }
@@ -332,6 +371,8 @@ export default function LeadsPage() {
       assigned_to: lead.assigned_to?.toString() || "",
       expected_close_date: lead.expected_close_date || "",
       notes: lead.notes || "",
+      product_category: lead.product_category || "",
+      product_subtype: lead.product_subtype || "",
     })
     setIsEditDialogOpen(true)
   }
@@ -345,7 +386,17 @@ export default function LeadsPage() {
     setStatusFilter("all")
     setSourceFilter("all")
     setAssigneeFilter("all")
+    setProductCategoryFilter("all")
     setSearchQuery("")
+  }
+
+  // Handle product category change
+  const handleProductCategoryChange = (category: string) => {
+    setFormData({
+      ...formData,
+      product_category: category,
+      product_subtype: "", // Reset subtype when category changes
+    })
   }
 
   if (loading) {
@@ -357,7 +408,7 @@ export default function LeadsPage() {
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold">Lead Management</h1>
-          <p className="text-muted-foreground">Manage and track your sales leads</p>
+          <p className="text-muted-foreground">Manage and track your insurance sales leads</p>
         </div>
         <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
           <DialogTrigger asChild>
@@ -366,10 +417,10 @@ export default function LeadsPage() {
               Add New Lead
             </Button>
           </DialogTrigger>
-          <DialogContent className="max-w-2xl">
+          <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Add New Lead</DialogTitle>
-              <DialogDescription>Create a new lead in the system</DialogDescription>
+              <DialogDescription>Create a new insurance lead in the system</DialogDescription>
             </DialogHeader>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
@@ -429,6 +480,43 @@ export default function LeadsPage() {
                     value={formData.industry}
                     onChange={(e) => setFormData({ ...formData, industry: e.target.value })}
                   />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="product_category">Product Category</Label>
+                  <Select value={formData.product_category} onValueChange={handleProductCategoryChange}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select product category" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Object.keys(PRODUCT_CATEGORIES).map((category) => (
+                        <SelectItem key={category} value={category}>
+                          {category}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label htmlFor="product_subtype">Product Subtype</Label>
+                  <Select
+                    value={formData.product_subtype}
+                    onValueChange={(value) => setFormData({ ...formData, product_subtype: value })}
+                    disabled={!formData.product_category}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select product subtype" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {getAvailableSubtypes(formData.product_category).map((subtype) => (
+                        <SelectItem key={subtype} value={subtype}>
+                          {subtype}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
 
@@ -561,7 +649,7 @@ export default function LeadsPage() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
             <div>
               <Label>Search</Label>
               <div className="relative">
@@ -589,6 +677,22 @@ export default function LeadsPage() {
                   <SelectItem value="negotiation">Negotiation</SelectItem>
                   <SelectItem value="won">Won</SelectItem>
                   <SelectItem value="lost">Lost</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Product Category</Label>
+              <Select value={productCategoryFilter} onValueChange={setProductCategoryFilter}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Categories</SelectItem>
+                  {Object.keys(PRODUCT_CATEGORIES).map((category) => (
+                    <SelectItem key={category} value={category}>
+                      {category}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -638,7 +742,7 @@ export default function LeadsPage() {
       <Card>
         <CardHeader>
           <CardTitle>Leads ({pagination.total})</CardTitle>
-          <CardDescription>Manage your sales leads and track their progress</CardDescription>
+          <CardDescription>Manage your insurance sales leads and track their progress</CardDescription>
         </CardHeader>
         <CardContent>
           <Table>
@@ -647,6 +751,7 @@ export default function LeadsPage() {
                 <TableHead>Lead #</TableHead>
                 <TableHead>Name</TableHead>
                 <TableHead>Company</TableHead>
+                <TableHead>Product</TableHead>
                 <TableHead>Source</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Priority</TableHead>
@@ -669,6 +774,24 @@ export default function LeadsPage() {
                     </div>
                   </TableCell>
                   <TableCell>{lead.company_name || "-"}</TableCell>
+                  <TableCell>
+                    <div className="space-y-1">
+                      {lead.product_category && (
+                        <Badge
+                          className={
+                            productCategoryColors[lead.product_category as keyof typeof productCategoryColors] ||
+                            "bg-gray-100 text-gray-800"
+                          }
+                        >
+                          {lead.product_category}
+                        </Badge>
+                      )}
+                      {lead.product_subtype && (
+                        <div className="text-xs text-muted-foreground">{lead.product_subtype}</div>
+                      )}
+                      {!lead.product_category && "-"}
+                    </div>
+                  </TableCell>
                   <TableCell>{lead.source_name || "-"}</TableCell>
                   <TableCell>
                     <Badge className={statusColors[lead.status]}>{lead.status}</Badge>
@@ -740,7 +863,7 @@ export default function LeadsPage() {
 
       {/* Edit Dialog */}
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Edit Lead</DialogTitle>
             <DialogDescription>Update lead information</DialogDescription>
@@ -803,6 +926,43 @@ export default function LeadsPage() {
                   value={formData.industry}
                   onChange={(e) => setFormData({ ...formData, industry: e.target.value })}
                 />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="edit_product_category">Product Category</Label>
+                <Select value={formData.product_category} onValueChange={handleProductCategoryChange}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select product category" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Object.keys(PRODUCT_CATEGORIES).map((category) => (
+                      <SelectItem key={category} value={category}>
+                        {category}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label htmlFor="edit_product_subtype">Product Subtype</Label>
+                <Select
+                  value={formData.product_subtype}
+                  onValueChange={(value) => setFormData({ ...formData, product_subtype: value })}
+                  disabled={!formData.product_category}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select product subtype" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {getAvailableSubtypes(formData.product_category).map((subtype) => (
+                      <SelectItem key={subtype} value={subtype}>
+                        {subtype}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
 

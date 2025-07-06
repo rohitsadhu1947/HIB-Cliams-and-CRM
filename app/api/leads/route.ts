@@ -1,7 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { neon } from "@neondatabase/serverless"
-
-const sql = neon(process.env.DATABASE_URL!)
+import { sql } from "@/lib/db"
 
 // TypeScript interfaces
 interface Lead {
@@ -21,6 +19,8 @@ interface Lead {
   assigned_at?: string
   expected_close_date?: string
   notes?: string
+  product_category?: string
+  product_subtype?: string
   created_at: string
   updated_at: string
 }
@@ -44,6 +44,8 @@ interface CreateLeadRequest {
   assigned_to?: number
   expected_close_date?: string
   notes?: string
+  product_category?: string
+  product_subtype?: string
 }
 
 interface PaginatedResponse<T> {
@@ -58,8 +60,37 @@ interface PaginatedResponse<T> {
   }
 }
 
+// Product categories and their subtypes
+const PRODUCT_CATEGORIES = {
+  Motor: ["2w", "4w", "CV"],
+  Health: ["Individual", "Family", "Group", "Critical Illness"],
+  Life: ["Term", "ULIP", "Endowment", "Others"],
+  Travel: ["Domestic", "International", "Student", "Business"],
+  Pet: ["Dog", "Cat", "Exotic"],
+  Cyber: ["Individual", "SME", "Corporate"],
+  Corporate: ["Property", "Liability", "Marine", "Engineering"],
+  Marine: ["Cargo", "Hull", "Liability"],
+} as const
+
+type ProductCategory = keyof typeof PRODUCT_CATEGORIES
+type ProductSubtype = (typeof PRODUCT_CATEGORIES)[ProductCategory][number]
+
+const validateProductCategory = (category: string): category is ProductCategory => {
+  return Object.keys(PRODUCT_CATEGORIES).includes(category)
+}
+
+const validateProductSubtype = (category: ProductCategory, subtype: string): boolean => {
+  return PRODUCT_CATEGORIES[category].includes(subtype as any)
+}
+
 export async function GET(request: NextRequest) {
   try {
+    // Check database connection
+    if (!process.env.DATABASE_URL) {
+      console.error("DATABASE_URL environment variable is not set")
+      return NextResponse.json({ error: "Database configuration error" }, { status: 500 })
+    }
+
     const { searchParams } = new URL(request.url)
     const page = Number.parseInt(searchParams.get("page") || "1")
     const limit = Number.parseInt(searchParams.get("limit") || "10")
@@ -67,6 +98,7 @@ export async function GET(request: NextRequest) {
     const status = searchParams.get("status")
     const sourceId = searchParams.get("source_id")
     const assignedTo = searchParams.get("assigned_to")
+    const productCategory = searchParams.get("product_category")
 
     const offset = (page - 1) * limit
 
@@ -106,6 +138,12 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    if (productCategory && productCategory !== "all") {
+      conditions.push(`l.product_category = $${paramIndex}`)
+      params.push(productCategory)
+      paramIndex++
+    }
+
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : ""
 
     // Log the count query and params for debugging
@@ -115,7 +153,7 @@ export async function GET(request: NextRequest) {
     // Defensive count query
     let countRows
     try {
-      countRows = await sql.query(countQuery, params)
+      countRows = await sql(countQuery, params)
     } catch (err) {
       console.error("SQL error in count query:", err)
       return NextResponse.json({ error: "SQL error in count query" }, { status: 500 })
@@ -133,7 +171,7 @@ export async function GET(request: NextRequest) {
       SELECT 
         l.*,
         ls.name as source_name,
-        u.full_name as assigned_user_name
+        u.name as assigned_user_name
       FROM leads l
       LEFT JOIN lead_sources ls ON l.source_id = ls.id
       LEFT JOIN users u ON l.assigned_to = u.id
@@ -147,7 +185,7 @@ export async function GET(request: NextRequest) {
 
     let rows
     try {
-      rows = await sql.query(leadsQuery, leadsParams)
+      rows = await sql(leadsQuery, leadsParams)
     } catch (err) {
       console.error("SQL error in leads query:", err)
       return NextResponse.json({ error: "SQL error in leads query" }, { status: 500 })
@@ -174,6 +212,12 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    // Check database connection
+    if (!process.env.DATABASE_URL) {
+      console.error("DATABASE_URL environment variable is not set")
+      return NextResponse.json({ error: "Database configuration error" }, { status: 500 })
+    }
+
     const body: CreateLeadRequest = await request.json()
     const {
       source_id,
@@ -189,6 +233,8 @@ export async function POST(request: NextRequest) {
       assigned_to,
       expected_close_date,
       notes,
+      product_category,
+      product_subtype,
     } = body
 
     // Validate required fields
@@ -201,16 +247,25 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Name fields must be less than 100 characters" }, { status: 400 })
     }
 
+    // Validate product category and subtype
+    if (product_category && !validateProductCategory(product_category)) {
+      return NextResponse.json({ error: "Invalid product category" }, { status: 400 })
+    }
+
+    if (product_category && product_subtype && !validateProductSubtype(product_category, product_subtype)) {
+      return NextResponse.json({ error: "Invalid product subtype for the selected category" }, { status: 400 })
+    }
+
     // Check for duplicate email if provided
     if (email) {
-      const { rows: duplicateRows } = await sql.query("SELECT id FROM leads WHERE email = $1", [email])
+      const duplicateRows = await sql("SELECT id FROM leads WHERE email = $1", [email])
       if (duplicateRows.length > 0) {
         return NextResponse.json({ error: "A lead with this email already exists" }, { status: 409 })
       }
     }
 
     // Generate lead number
-    const { rows: leadNumberRows } = await sql.query(
+    const leadNumberRows = await sql(
       "SELECT COALESCE(MAX(CAST(SUBSTRING(lead_number FROM 6) AS INTEGER)), 0) + 1 as next_number FROM leads WHERE lead_number LIKE 'LEAD-%'",
       [],
     )
@@ -227,9 +282,9 @@ export async function POST(request: NextRequest) {
       INSERT INTO leads (
         lead_number, source_id, first_name, last_name, email, phone,
         company_name, industry, lead_value, status, priority, assigned_to,
-        expected_close_date, notes, created_at, updated_at
+        expected_close_date, notes, product_category, product_subtype, created_at, updated_at
       ) VALUES (
-        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW(), NOW()
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, NOW(), NOW()
       ) RETURNING *
     `
 
@@ -249,9 +304,11 @@ export async function POST(request: NextRequest) {
       assigned_to || null,
       expected_close_date || null,
       notes?.trim() || null,
+      product_category || null,
+      product_subtype || null,
     ])
 
-    const { rows: insertRows } = await sql.query(insertQuery, [
+    const insertRows = await sql(insertQuery, [
       leadNumber,
       source_id || null,
       first_name.trim(),
@@ -266,6 +323,8 @@ export async function POST(request: NextRequest) {
       assigned_to || null,
       expected_close_date || null,
       notes?.trim() || null,
+      product_category || null,
+      product_subtype || null,
     ])
 
     if (insertRows.length === 0) {
@@ -286,7 +345,7 @@ export async function POST(request: NextRequest) {
 
     console.log("Created Lead Query:", createdLeadQuery, [insertRows[0].id])
 
-    const { rows: createdLeadRows } = await sql.query(createdLeadQuery, [insertRows[0].id])
+    const createdLeadRows = await sql(createdLeadQuery, [insertRows[0].id])
 
     if (createdLeadRows.length === 0) {
       return NextResponse.json(insertRows[0], { status: 201 })
