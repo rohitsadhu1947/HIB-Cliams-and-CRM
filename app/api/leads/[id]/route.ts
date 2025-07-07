@@ -9,7 +9,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
       return NextResponse.json({ error: "Invalid lead ID" }, { status: 400 })
     }
 
-    const query = `
+    const result = await sql`
       SELECT 
         l.*,
         ls.name as source_name,
@@ -17,10 +17,8 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
       FROM leads l
       LEFT JOIN lead_sources ls ON l.source_id = ls.id
       LEFT JOIN users u ON l.assigned_to = u.id
-      WHERE l.id = $1
+      WHERE l.id = ${id}
     `
-
-    const result = await sql(query, [id])
 
     if (result.length === 0) {
       return NextResponse.json({ error: "Lead not found" }, { status: 404 })
@@ -83,56 +81,37 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
       Marine: ["Cargo", "Hull", "Liability"],
     }
 
-    if (product_category && product_subtype && !validCombinations[product_category]?.includes(product_subtype)) {
-      return NextResponse.json(
-        { error: `Invalid product subtype '${product_subtype}' for category '${product_category}'` },
-        { status: 400 },
-      )
+    if (product_category && product_subtype) {
+      const validSubtypes = validCombinations[product_category as keyof typeof validCombinations]
+      if (!validSubtypes || !validSubtypes.includes(product_subtype)) {
+        return NextResponse.json(
+          { error: `Invalid product subtype '${product_subtype}' for category '${product_category}'` },
+          { status: 400 },
+        )
+      }
     }
 
-    const query = `
-      UPDATE leads 
-      SET 
-        source_id = $2,
-        first_name = $3,
-        last_name = $4,
-        email = $5,
-        phone = $6,
-        company_name = $7,
-        industry = $8,
-        lead_value = $9,
-        status = $10,
-        priority = $11,
-        assigned_to = $12,
-        expected_close_date = $13,
-        notes = $14,
-        product_category = $15,
-        product_subtype = $16,
+    const result = await sql`
+      UPDATE leads SET
+        source_id = ${source_id || null},
+        first_name = ${first_name},
+        last_name = ${last_name},
+        email = ${email || null},
+        phone = ${phone || null},
+        company_name = ${company_name || null},
+        industry = ${industry || null},
+        lead_value = ${lead_value || null},
+        status = ${status},
+        priority = ${priority},
+        assigned_to = ${assigned_to || null},
+        expected_close_date = ${expected_close_date || null},
+        notes = ${notes || null},
+        product_category = ${product_category || null},
+        product_subtype = ${product_subtype || null},
         updated_at = NOW()
-      WHERE id = $1
+      WHERE id = ${id}
       RETURNING *
     `
-
-    const params = [
-      id,
-      source_id || null,
-      first_name,
-      last_name,
-      email || null,
-      phone || null,
-      company_name || null,
-      industry || null,
-      lead_value || null,
-      status,
-      priority,
-      assigned_to || null,
-      expected_close_date || null,
-      notes || null,
-      product_category || null,
-      product_subtype || null,
-    ]
-
-    const result = await sql(query, params)
 
     if (result.length === 0) {
       return NextResponse.json({ error: "Lead not found" }, { status: 404 })
@@ -159,8 +138,10 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
       return NextResponse.json({ error: "Invalid lead ID" }, { status: 400 })
     }
 
-    const query = `DELETE FROM leads WHERE id = $1 RETURNING *`
-    const result = await sql(query, [id])
+    const result = await sql`
+      DELETE FROM leads WHERE id = ${id}
+      RETURNING id
+    `
 
     if (result.length === 0) {
       return NextResponse.json({ error: "Lead not found" }, { status: 404 })
