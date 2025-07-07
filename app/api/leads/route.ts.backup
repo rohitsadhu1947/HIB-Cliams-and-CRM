@@ -1,0 +1,111 @@
+import { type NextRequest, NextResponse } from "next/server";
+import { neon } from "@neondatabase/serverless";
+
+const sql = neon(process.env.DATABASE_URL!);
+
+export async function GET(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const page = Number.parseInt(searchParams.get("page") || "1");
+    const limit = Number.parseInt(searchParams.get("limit") || "10");
+    const search = searchParams.get("search");
+    const status = searchParams.get("status");
+    const sourceId = searchParams.get("source_id");
+    const assignedTo = searchParams.get("assigned_to");
+
+    const offset = (page - 1) * limit;
+
+    // Build WHERE conditions and params
+    const conditions: string[] = [];
+    const params: any[] = [];
+    let paramIndex = 1;
+
+    if (search) {
+      conditions.push(
+        `(l.first_name ILIKE $${paramIndex} OR l.last_name ILIKE $${paramIndex} OR l.email ILIKE $${paramIndex} OR l.company_name ILIKE $${paramIndex})`
+      );
+      params.push(`%${search}%`);
+      paramIndex++;
+    }
+    if (status) {
+      conditions.push(`l.status = $${paramIndex}`);
+      params.push(status);
+      paramIndex++;
+    }
+    if (sourceId) {
+      conditions.push(`l.source_id = $${paramIndex}`);
+      params.push(Number.parseInt(sourceId));
+      paramIndex++;
+    }
+    if (assignedTo) {
+      if (assignedTo === "unassigned") {
+        conditions.push(`l.assigned_to IS NULL`);
+        // Do NOT increment paramIndex or add to params
+      } else {
+        conditions.push(`l.assigned_to = $${paramIndex}`);
+        params.push(Number.parseInt(assignedTo));
+        paramIndex++;
+      }
+    }
+
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+
+    // Log the count query and params for debugging
+    const countQuery = `SELECT COUNT(*) as total FROM leads l ${whereClause}`;
+    console.log("Count Query:", countQuery, params);
+
+    // Defensive count query
+    let countRows;
+    try {
+      countRows = await sql.query(countQuery, params);
+    } catch (err) {
+      console.error("SQL error in count query:", err);
+      return NextResponse.json({ error: "SQL error in count query" }, { status: 500 });
+    }
+    if (!countRows[0] || countRows[0].total === undefined || countRows[0].total === null) {
+      console.error("Count query returned no rows or invalid result:", countRows);
+      return NextResponse.json({ error: "Count query failed" }, { status: 500 });
+    }
+    const total = Number.parseInt(countRows[0].total);
+
+    // Get leads with pagination
+    const leadsQuery = `
+      SELECT 
+        l.*,
+        ls.name as source_name,
+        u.name as assigned_user_name
+      FROM leads l
+      LEFT JOIN lead_sources ls ON l.source_id = ls.id
+      LEFT JOIN users u ON l.assigned_to = u.id
+      ${whereClause}
+      ORDER BY l.created_at DESC
+      LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
+    `;
+    const leadsParams = [...params, limit, offset];
+    console.log("Leads Query:", leadsQuery, leadsParams);
+    let rows;
+    try {
+      rows = await sql.query(leadsQuery, leadsParams);
+    } catch (err) {
+      console.error("SQL error in leads query:", err);
+      return NextResponse.json({ error: "SQL error in leads query" }, { status: 500 });
+    }
+
+    const totalPages = Math.ceil(total / limit);
+
+    return NextResponse.json({
+      leads: rows,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages,
+        hasNext: page < totalPages,
+        hasPrev: page > 1,
+      },
+    });
+  } catch (error) {
+    console.error("Error fetching leads:", error);
+    return NextResponse.json({ error: "Failed to fetch leads" }, { status: 500 });
+  }
+} 

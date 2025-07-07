@@ -170,7 +170,7 @@ export default function LeadsPage() {
   // Get available subtypes based on selected category
   const getAvailableSubtypes = (category: string): string[] => {
     if (!category || !(category in PRODUCT_CATEGORIES)) return []
-    return PRODUCT_CATEGORIES[category as ProductCategory]
+    return [...PRODUCT_CATEGORIES[category as ProductCategory]]
   }
 
   // Fetch leads
@@ -333,10 +333,17 @@ export default function LeadsPage() {
         description: `Lead ${selectedLead ? "updated" : "created"} successfully`,
       })
 
+      // Close dialogs first
       setIsAddDialogOpen(false)
       setIsEditDialogOpen(false)
+      
+      // Reset form and selected lead
       resetForm()
-      fetchLeads()
+      
+      // Fetch updated leads after a short delay to ensure state is cleared
+      setTimeout(() => {
+        fetchLeads()
+      }, 100)
     } catch (error) {
       console.error("Error saving lead:", error)
       toast({
@@ -387,8 +394,17 @@ export default function LeadsPage() {
         title: "Success",
         description: "Lead assigned successfully",
       })
+      
+      // Close dialog first
       setIsAssignDialogOpen(false)
-      fetchLeads()
+      
+      // Clear selected lead
+      setSelectedLead(null)
+      
+      // Fetch updated leads after a short delay
+      setTimeout(() => {
+        fetchLeads()
+      }, 100)
     } catch (error) {
       console.error("Error assigning lead:", error)
       toast({
