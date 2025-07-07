@@ -9,7 +9,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
       return NextResponse.json({ error: "Invalid lead ID" }, { status: 400 })
     }
 
-    const result = await sql`
+    const leads = await sql`
       SELECT 
         l.*,
         ls.name as source_name,
@@ -20,11 +20,11 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
       WHERE l.id = ${id}
     `
 
-    if (result.length === 0) {
+    if (leads.length === 0) {
       return NextResponse.json({ error: "Lead not found" }, { status: 404 })
     }
 
-    return NextResponse.json(result[0])
+    return NextResponse.json(leads[0])
   } catch (error) {
     console.error("Error fetching lead:", error)
     return NextResponse.json(

@@ -1,3 +1,27 @@
+-- Create leads table if it doesn't exist
+CREATE TABLE IF NOT EXISTS leads (
+  id SERIAL PRIMARY KEY,
+  lead_number VARCHAR(50) UNIQUE NOT NULL,
+  source_id INTEGER REFERENCES lead_sources(id),
+  first_name VARCHAR(100) NOT NULL,
+  last_name VARCHAR(100) NOT NULL,
+  email VARCHAR(255),
+  phone VARCHAR(20),
+  company_name VARCHAR(255),
+  industry VARCHAR(100),
+  lead_value DECIMAL(12,2),
+  status VARCHAR(20) DEFAULT 'new' CHECK (status IN ('new', 'contacted', 'qualified', 'proposal', 'negotiation', 'won', 'lost')),
+  priority VARCHAR(10) DEFAULT 'medium' CHECK (priority IN ('low', 'medium', 'high', 'urgent')),
+  assigned_to INTEGER REFERENCES users(id),
+  assigned_at TIMESTAMP,
+  expected_close_date DATE,
+  notes TEXT,
+  product_category VARCHAR(50),
+  product_subtype VARCHAR(50),
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
 -- Add product columns to leads table if they don't exist
 DO $$ 
 BEGIN

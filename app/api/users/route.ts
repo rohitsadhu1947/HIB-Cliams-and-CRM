@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server"
+import { type NextRequest, NextResponse } from "next/server"
 import { sql } from "@/lib/db"
 
 export async function GET() {
@@ -11,14 +11,12 @@ export async function GET() {
         SELECT FROM information_schema.tables 
         WHERE table_schema = 'public' 
         AND table_name = 'users'
-      );
+      )
     `
     console.log("Users table exists:", tableExists[0]?.exists)
 
     if (!tableExists[0]?.exists) {
-      console.log("Creating users table and sample data...")
-
-      // Create table
+      console.log("Creating users table...")
       await sql`
         CREATE TABLE users (
           id SERIAL PRIMARY KEY,
@@ -31,37 +29,30 @@ export async function GET() {
         )
       `
 
-      // Insert sample data
+      // Insert sample users
       await sql`
-        INSERT INTO users (name, email, role, is_active) VALUES
-        ('John Smith', 'john.smith@company.com', 'admin', true),
-        ('Sarah Johnson', 'sarah.johnson@company.com', 'manager', true),
-        ('Mike Davis', 'mike.davis@company.com', 'agent', true),
-        ('Lisa Wilson', 'lisa.wilson@company.com', 'agent', true),
-        ('Tom Brown', 'tom.brown@company.com', 'agent', true)
+        INSERT INTO users (name, email, role) VALUES
+        ('John Smith', 'john.smith@company.com', 'admin'),
+        ('Sarah Johnson', 'sarah.johnson@company.com', 'manager'),
+        ('Mike Davis', 'mike.davis@company.com', 'agent'),
+        ('Lisa Wilson', 'lisa.wilson@company.com', 'agent'),
+        ('Tom Brown', 'tom.brown@company.com', 'agent')
       `
       console.log("Users table created with sample data")
     }
 
-    // Fetch all active users
     const users = await sql`
       SELECT id, name, email, role, is_active, created_at, updated_at
       FROM users 
       WHERE is_active = true 
-      ORDER BY name ASC
+      ORDER BY name
     `
 
     console.log("Users fetched:", users.length, "records")
-    console.log("Sample user:", users[0] ? JSON.stringify(users[0], null, 2) : "No users found")
-
-    return NextResponse.json({
-      users,
-      success: true,
-    })
+    return NextResponse.json({ users, success: true })
   } catch (error) {
     console.error("=== USERS API ERROR ===")
     console.error("Error:", error)
-
     return NextResponse.json(
       {
         error: "Failed to fetch users",
@@ -74,7 +65,7 @@ export async function GET() {
   }
 }
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const { name, email, role = "user", is_active = true } = body

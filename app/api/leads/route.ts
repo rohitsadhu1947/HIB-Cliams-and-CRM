@@ -31,32 +31,32 @@ export async function GET(request: NextRequest) {
 
     console.log("Filter params:", { status, source_id, assigned_to, product_category, search })
 
-    // Build WHERE conditions
-    const whereConditions = []
-    const queryParams: any[] = []
+    // Build WHERE conditions using template literals
+    let whereClause = ""
+    const conditions = []
 
     if (status && status !== "all") {
-      whereConditions.push(`status = '${status}'`)
+      conditions.push(`status = '${status}'`)
     }
 
     if (source_id && source_id !== "all") {
-      whereConditions.push(`source_id = ${Number.parseInt(source_id)}`)
+      conditions.push(`source_id = ${Number.parseInt(source_id)}`)
     }
 
     if (assigned_to && assigned_to !== "all") {
       if (assigned_to === "unassigned") {
-        whereConditions.push("assigned_to IS NULL")
+        conditions.push("assigned_to IS NULL")
       } else {
-        whereConditions.push(`assigned_to = ${Number.parseInt(assigned_to)}`)
+        conditions.push(`assigned_to = ${Number.parseInt(assigned_to)}`)
       }
     }
 
     if (product_category && product_category !== "all") {
-      whereConditions.push(`product_category = '${product_category}'`)
+      conditions.push(`product_category = '${product_category}'`)
     }
 
     if (search) {
-      whereConditions.push(`(
+      conditions.push(`(
         first_name ILIKE '%${search}%' OR 
         last_name ILIKE '%${search}%' OR 
         email ILIKE '%${search}%' OR 
@@ -65,52 +65,95 @@ export async function GET(request: NextRequest) {
       )`)
     }
 
-    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(" AND ")}` : ""
+    if (conditions.length > 0) {
+      whereClause = `WHERE ${conditions.join(" AND ")}`
+    }
+
     console.log("WHERE clause:", whereClause)
 
-    // Get total count with filters
-    const countQuery = `SELECT COUNT(*) as total FROM leads ${whereClause}`
-    console.log("Count query:", countQuery)
+    // Get total count with filters - using template literal properly
+    let total = 0
+    if (whereClause) {
+      const countResult = await sql`
+        SELECT COUNT(*) as total 
+        FROM leads 
+        ${sql.unsafe(whereClause)}
+      `
+      total = Number.parseInt(countResult[0]?.total || "0")
+    } else {
+      const countResult = await sql`SELECT COUNT(*) as total FROM leads`
+      total = Number.parseInt(countResult[0]?.total || "0")
+    }
 
-    const countResult = await sql(countQuery)
-    const total = Number.parseInt(countResult[0]?.total || "0")
     console.log("Filtered total:", total)
 
     // Get leads with pagination and joins
-    const leadsQuery = `
-      SELECT 
-        l.id,
-        l.lead_number,
-        l.source_id,
-        l.first_name,
-        l.last_name,
-        l.email,
-        l.phone,
-        l.company_name,
-        l.industry,
-        l.lead_value,
-        l.status,
-        l.priority,
-        l.assigned_to,
-        l.assigned_at,
-        l.expected_close_date,
-        l.notes,
-        l.product_category,
-        l.product_subtype,
-        l.created_at,
-        l.updated_at,
-        ls.name as source_name,
-        u.name as assigned_user_name
-      FROM leads l
-      LEFT JOIN lead_sources ls ON l.source_id = ls.id
-      LEFT JOIN users u ON l.assigned_to = u.id
-      ${whereClause}
-      ORDER BY l.created_at DESC
-      LIMIT ${limit} OFFSET ${offset}
-    `
+    let leads
+    if (whereClause) {
+      leads = await sql`
+        SELECT 
+          l.id,
+          l.lead_number,
+          l.source_id,
+          l.first_name,
+          l.last_name,
+          l.email,
+          l.phone,
+          l.company_name,
+          l.industry,
+          l.lead_value,
+          l.status,
+          l.priority,
+          l.assigned_to,
+          l.assigned_at,
+          l.expected_close_date,
+          l.notes,
+          l.product_category,
+          l.product_subtype,
+          l.created_at,
+          l.updated_at,
+          ls.name as source_name,
+          u.name as assigned_user_name
+        FROM leads l
+        LEFT JOIN lead_sources ls ON l.source_id = ls.id
+        LEFT JOIN users u ON l.assigned_to = u.id
+        ${sql.unsafe(whereClause)}
+        ORDER BY l.created_at DESC
+        LIMIT ${limit} OFFSET ${offset}
+      `
+    } else {
+      leads = await sql`
+        SELECT 
+          l.id,
+          l.lead_number,
+          l.source_id,
+          l.first_name,
+          l.last_name,
+          l.email,
+          l.phone,
+          l.company_name,
+          l.industry,
+          l.lead_value,
+          l.status,
+          l.priority,
+          l.assigned_to,
+          l.assigned_at,
+          l.expected_close_date,
+          l.notes,
+          l.product_category,
+          l.product_subtype,
+          l.created_at,
+          l.updated_at,
+          ls.name as source_name,
+          u.name as assigned_user_name
+        FROM leads l
+        LEFT JOIN lead_sources ls ON l.source_id = ls.id
+        LEFT JOIN users u ON l.assigned_to = u.id
+        ORDER BY l.created_at DESC
+        LIMIT ${limit} OFFSET ${offset}
+      `
+    }
 
-    console.log("Leads query:", leadsQuery)
-    const leads = await sql(leadsQuery)
     console.log("Leads fetched:", leads.length, "records")
 
     if (leads.length > 0) {
@@ -207,7 +250,7 @@ export async function POST(request: NextRequest) {
     const lead_number = `LEAD-${nextNumber.toString().padStart(6, "0")}`
     console.log("Generated lead number:", lead_number)
 
-    // Insert lead
+    // Insert lead using template literals
     const result = await sql`
       INSERT INTO leads (
         lead_number, source_id, first_name, last_name, email, phone,
