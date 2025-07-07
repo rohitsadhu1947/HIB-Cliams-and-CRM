@@ -23,7 +23,7 @@ export async function GET() {
         CREATE TABLE users (
           id SERIAL PRIMARY KEY,
           name VARCHAR(100) NOT NULL,
-          email VARCHAR(255) NOT NULL UNIQUE,
+          email VARCHAR(255) UNIQUE NOT NULL,
           role VARCHAR(50) DEFAULT 'user',
           is_active BOOLEAN DEFAULT true,
           created_at TIMESTAMP DEFAULT NOW(),
@@ -52,6 +52,7 @@ export async function GET() {
     `
 
     console.log("Users fetched:", users.length, "records")
+    console.log("Sample user:", users[0] ? JSON.stringify(users[0], null, 2) : "No users found")
 
     return NextResponse.json({
       users,

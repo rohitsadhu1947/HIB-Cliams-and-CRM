@@ -69,28 +69,6 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
       return NextResponse.json({ error: "First name and last name are required" }, { status: 400 })
     }
 
-    // Validate product category and subtype combination
-    const validCombinations = {
-      Motor: ["2w", "4w", "CV"],
-      Health: ["Individual", "Family", "Group", "Critical Illness"],
-      Life: ["Term", "ULIP", "Endowment", "Others"],
-      Travel: ["Domestic", "International", "Student", "Business"],
-      Pet: ["Dog", "Cat", "Exotic"],
-      Cyber: ["Individual", "SME", "Corporate"],
-      Corporate: ["Property", "Liability", "Marine", "Engineering"],
-      Marine: ["Cargo", "Hull", "Liability"],
-    }
-
-    if (product_category && product_subtype) {
-      const validSubtypes = validCombinations[product_category as keyof typeof validCombinations]
-      if (!validSubtypes || !validSubtypes.includes(product_subtype)) {
-        return NextResponse.json(
-          { error: `Invalid product subtype '${product_subtype}' for category '${product_category}'` },
-          { status: 400 },
-        )
-      }
-    }
-
     const result = await sql`
       UPDATE leads SET
         source_id = ${source_id || null},

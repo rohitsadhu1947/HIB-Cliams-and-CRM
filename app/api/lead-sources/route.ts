@@ -22,7 +22,7 @@ export async function GET() {
       await sql`
         CREATE TABLE lead_sources (
           id SERIAL PRIMARY KEY,
-          name VARCHAR(100) NOT NULL UNIQUE,
+          name VARCHAR(100) NOT NULL,
           description TEXT,
           is_active BOOLEAN DEFAULT true,
           created_at TIMESTAMP DEFAULT NOW(),
@@ -54,6 +54,7 @@ export async function GET() {
     `
 
     console.log("Lead sources fetched:", sources.length, "records")
+    console.log("Sample source:", sources[0] ? JSON.stringify(sources[0], null, 2) : "No sources found")
 
     return NextResponse.json({
       sources,

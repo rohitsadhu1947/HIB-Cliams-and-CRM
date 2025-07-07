@@ -4,52 +4,23 @@ import { sql } from "@/lib/db"
 export async function GET(request: NextRequest) {
   try {
     console.log("=== LEADS API GET: Starting request ===")
+    console.log("Request URL:", request.url)
 
     const { searchParams } = new URL(request.url)
     const page = Number.parseInt(searchParams.get("page") || "1")
     const limit = Number.parseInt(searchParams.get("limit") || "10")
     const offset = (page - 1) * limit
 
-    console.log("Query params:", { page, limit, offset })
+    console.log("Pagination params:", { page, limit, offset })
 
-    // Check if leads table exists
-    const tableExists = await sql`
-      SELECT EXISTS (
-        SELECT FROM information_schema.tables 
-        WHERE table_schema = 'public' 
-        AND table_name = 'leads'
-      );
-    `
-    console.log("Leads table exists:", tableExists[0]?.exists)
+    // First, let's check what's actually in the database
+    console.log("=== CHECKING DATABASE CONTENT ===")
 
-    if (!tableExists[0]?.exists) {
-      console.log("Creating leads table...")
-      await sql`
-        CREATE TABLE leads (
-          id SERIAL PRIMARY KEY,
-          lead_number VARCHAR(50) UNIQUE NOT NULL,
-          source_id INTEGER REFERENCES lead_sources(id),
-          first_name VARCHAR(100) NOT NULL,
-          last_name VARCHAR(100) NOT NULL,
-          email VARCHAR(255),
-          phone VARCHAR(20),
-          company_name VARCHAR(255),
-          industry VARCHAR(100),
-          lead_value DECIMAL(12,2),
-          status VARCHAR(20) DEFAULT 'new' CHECK (status IN ('new', 'contacted', 'qualified', 'proposal', 'negotiation', 'won', 'lost')),
-          priority VARCHAR(10) DEFAULT 'medium' CHECK (priority IN ('low', 'medium', 'high', 'urgent')),
-          assigned_to INTEGER REFERENCES users(id),
-          assigned_at TIMESTAMP,
-          expected_close_date DATE,
-          notes TEXT,
-          product_category VARCHAR(50),
-          product_subtype VARCHAR(50),
-          created_at TIMESTAMP DEFAULT NOW(),
-          updated_at TIMESTAMP DEFAULT NOW()
-        )
-      `
-      console.log("Leads table created")
-    }
+    const allLeads = await sql`SELECT COUNT(*) as total FROM leads`
+    console.log("Total leads in database:", allLeads[0]?.total)
+
+    const sampleLeads = await sql`SELECT * FROM leads LIMIT 3`
+    console.log("Sample leads from database:", JSON.stringify(sampleLeads, null, 2))
 
     // Build filters
     const status = searchParams.get("status")
@@ -58,67 +29,54 @@ export async function GET(request: NextRequest) {
     const product_category = searchParams.get("product_category")
     const search = searchParams.get("search")
 
-    const whereConditions = ["1=1"]
+    console.log("Filter params:", { status, source_id, assigned_to, product_category, search })
+
+    // Build WHERE conditions
+    const whereConditions = []
     const queryParams: any[] = []
-    let paramIndex = 1
 
     if (status && status !== "all") {
-      whereConditions.push(`l.status = $${paramIndex}`)
-      queryParams.push(status)
-      paramIndex++
+      whereConditions.push(`status = '${status}'`)
     }
 
     if (source_id && source_id !== "all") {
-      whereConditions.push(`l.source_id = $${paramIndex}`)
-      queryParams.push(Number.parseInt(source_id))
-      paramIndex++
+      whereConditions.push(`source_id = ${Number.parseInt(source_id)}`)
     }
 
     if (assigned_to && assigned_to !== "all") {
       if (assigned_to === "unassigned") {
-        whereConditions.push("l.assigned_to IS NULL")
+        whereConditions.push("assigned_to IS NULL")
       } else {
-        whereConditions.push(`l.assigned_to = $${paramIndex}`)
-        queryParams.push(Number.parseInt(assigned_to))
-        paramIndex++
+        whereConditions.push(`assigned_to = ${Number.parseInt(assigned_to)}`)
       }
     }
 
     if (product_category && product_category !== "all") {
-      whereConditions.push(`l.product_category = $${paramIndex}`)
-      queryParams.push(product_category)
-      paramIndex++
+      whereConditions.push(`product_category = '${product_category}'`)
     }
 
     if (search) {
       whereConditions.push(`(
-        l.first_name ILIKE $${paramIndex} OR 
-        l.last_name ILIKE $${paramIndex} OR 
-        l.email ILIKE $${paramIndex} OR 
-        l.company_name ILIKE $${paramIndex} OR
-        l.lead_number ILIKE $${paramIndex}
+        first_name ILIKE '%${search}%' OR 
+        last_name ILIKE '%${search}%' OR 
+        email ILIKE '%${search}%' OR 
+        company_name ILIKE '%${search}%' OR
+        lead_number ILIKE '%${search}%'
       )`)
-      queryParams.push(`%${search}%`)
-      paramIndex++
     }
 
-    const whereClause = whereConditions.join(" AND ")
+    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(" AND ")}` : ""
     console.log("WHERE clause:", whereClause)
-    console.log("Query params:", queryParams)
 
-    // Get total count
-    const countQuery = `
-      SELECT COUNT(*) as total
-      FROM leads l
-      WHERE ${whereClause}
-    `
+    // Get total count with filters
+    const countQuery = `SELECT COUNT(*) as total FROM leads ${whereClause}`
+    console.log("Count query:", countQuery)
 
-    console.log("Executing count query:", countQuery)
-    const countResult = await sql(countQuery, queryParams)
+    const countResult = await sql(countQuery)
     const total = Number.parseInt(countResult[0]?.total || "0")
-    console.log("Total leads found:", total)
+    console.log("Filtered total:", total)
 
-    // Get leads with pagination
+    // Get leads with pagination and joins
     const leadsQuery = `
       SELECT 
         l.id,
@@ -146,18 +104,18 @@ export async function GET(request: NextRequest) {
       FROM leads l
       LEFT JOIN lead_sources ls ON l.source_id = ls.id
       LEFT JOIN users u ON l.assigned_to = u.id
-      WHERE ${whereClause}
+      ${whereClause}
       ORDER BY l.created_at DESC
-      LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
+      LIMIT ${limit} OFFSET ${offset}
     `
 
-    queryParams.push(limit, offset)
-    console.log("Executing leads query:", leadsQuery)
-    console.log("Final query params:", queryParams)
-
-    const leads = await sql(leadsQuery, queryParams)
+    console.log("Leads query:", leadsQuery)
+    const leads = await sql(leadsQuery)
     console.log("Leads fetched:", leads.length, "records")
-    console.log("Sample lead data:", leads[0] ? JSON.stringify(leads[0], null, 2) : "No leads found")
+
+    if (leads.length > 0) {
+      console.log("First lead:", JSON.stringify(leads[0], null, 2))
+    }
 
     const totalPages = Math.ceil(total / limit)
 
@@ -174,7 +132,11 @@ export async function GET(request: NextRequest) {
       success: true,
     }
 
-    console.log("Returning response:", JSON.stringify(response, null, 2))
+    console.log("=== RESPONSE SUMMARY ===")
+    console.log("Total leads:", total)
+    console.log("Leads returned:", leads.length)
+    console.log("Page:", page, "of", totalPages)
+
     return NextResponse.json(response)
   } catch (error) {
     console.error("=== LEADS API GET ERROR ===")
@@ -233,29 +195,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "First name and last name are required" }, { status: 400 })
     }
 
-    // Validate product category and subtype combination
-    const validCombinations = {
-      Motor: ["2w", "4w", "CV"],
-      Health: ["Individual", "Family", "Group", "Critical Illness"],
-      Life: ["Term", "ULIP", "Endowment", "Others"],
-      Travel: ["Domestic", "International", "Student", "Business"],
-      Pet: ["Dog", "Cat", "Exotic"],
-      Cyber: ["Individual", "SME", "Corporate"],
-      Corporate: ["Property", "Liability", "Marine", "Engineering"],
-      Marine: ["Cargo", "Hull", "Liability"],
-    }
-
-    if (product_category && product_subtype) {
-      const validSubtypes = validCombinations[product_category as keyof typeof validCombinations]
-      if (!validSubtypes || !validSubtypes.includes(product_subtype)) {
-        console.log("Validation failed: Invalid product combination")
-        return NextResponse.json(
-          { error: `Invalid product subtype '${product_subtype}' for category '${product_category}'` },
-          { status: 400 },
-        )
-      }
-    }
-
     // Generate lead number
     console.log("Generating lead number...")
     const leadNumberResult = await sql`
@@ -284,26 +223,11 @@ export async function POST(request: NextRequest) {
       ) RETURNING *
     `
 
-    console.log("Lead created successfully:", result[0])
+    console.log("Lead created successfully:", JSON.stringify(result[0], null, 2))
     return NextResponse.json(result[0], { status: 201 })
   } catch (error) {
     console.error("=== LEADS API POST ERROR ===")
-    console.error("Error type:", typeof error)
-    console.error("Error message:", error instanceof Error ? error.message : String(error))
-    console.error("Error stack:", error instanceof Error ? error.stack : "No stack trace")
-
-    // Check for specific database errors
-    if (error instanceof Error) {
-      if (error.message.includes("duplicate key")) {
-        return NextResponse.json({ error: "Lead number already exists" }, { status: 409 })
-      }
-      if (error.message.includes("foreign key")) {
-        return NextResponse.json({ error: "Invalid source or user reference" }, { status: 400 })
-      }
-      if (error.message.includes("check constraint")) {
-        return NextResponse.json({ error: "Invalid status, priority, or product combination" }, { status: 400 })
-      }
-    }
+    console.error("Error:", error)
 
     return NextResponse.json(
       {

@@ -6,7 +6,7 @@ if (!process.env.DATABASE_URL) {
 
 console.log("=== DATABASE CONNECTION ===")
 console.log("DATABASE_URL exists:", !!process.env.DATABASE_URL)
-console.log("DATABASE_URL preview:", process.env.DATABASE_URL?.substring(0, 20) + "...")
+console.log("DATABASE_URL preview:", process.env.DATABASE_URL?.substring(0, 30) + "...")
 
 export const sql = neon(process.env.DATABASE_URL)
 
