@@ -6,70 +6,71 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const page = Number.parseInt(searchParams.get("page") || "1")
     const limit = Number.parseInt(searchParams.get("limit") || "10")
+    const offset = (page - 1) * limit
+
+    // Filters
     const status = searchParams.get("status")
     const source_id = searchParams.get("source_id")
     const assigned_to = searchParams.get("assigned_to")
     const product_category = searchParams.get("product_category")
     const search = searchParams.get("search")
 
-    const offset = (page - 1) * limit
-
     // Build WHERE conditions
-    const conditions = []
-    const params = []
+    const whereConditions = ["1=1"]
+    const queryParams: any[] = []
     let paramIndex = 1
 
     if (status && status !== "all") {
-      conditions.push(`l.status = $${paramIndex}`)
-      params.push(status)
+      whereConditions.push(`l.status = $${paramIndex}`)
+      queryParams.push(status)
       paramIndex++
     }
 
     if (source_id && source_id !== "all") {
-      conditions.push(`l.source_id = $${paramIndex}`)
-      params.push(Number.parseInt(source_id))
+      whereConditions.push(`l.source_id = $${paramIndex}`)
+      queryParams.push(Number.parseInt(source_id))
       paramIndex++
     }
 
     if (assigned_to && assigned_to !== "all") {
       if (assigned_to === "unassigned") {
-        conditions.push("l.assigned_to IS NULL")
+        whereConditions.push("l.assigned_to IS NULL")
       } else {
-        conditions.push(`l.assigned_to = $${paramIndex}`)
-        params.push(Number.parseInt(assigned_to))
+        whereConditions.push(`l.assigned_to = $${paramIndex}`)
+        queryParams.push(Number.parseInt(assigned_to))
         paramIndex++
       }
     }
 
     if (product_category && product_category !== "all") {
-      conditions.push(`l.product_category = $${paramIndex}`)
-      params.push(product_category)
+      whereConditions.push(`l.product_category = $${paramIndex}`)
+      queryParams.push(product_category)
       paramIndex++
     }
 
     if (search) {
-      conditions.push(`(
+      whereConditions.push(`(
         l.first_name ILIKE $${paramIndex} OR 
         l.last_name ILIKE $${paramIndex} OR 
         l.email ILIKE $${paramIndex} OR 
         l.company_name ILIKE $${paramIndex} OR
         l.lead_number ILIKE $${paramIndex}
       )`)
-      params.push(`%${search}%`)
+      queryParams.push(`%${search}%`)
       paramIndex++
     }
 
-    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : ""
+    const whereClause = whereConditions.join(" AND ")
 
     // Get total count
     const countQuery = `
       SELECT COUNT(*) as total
       FROM leads l
-      ${whereClause}
+      WHERE ${whereClause}
     `
 
-    const countResult = await sql(countQuery, params)
-    const total = Number(countResult[0]?.total || 0)
+    const countResult = await sql(countQuery, queryParams)
+    const total = Number.parseInt(countResult[0]?.total || "0")
 
     // Get leads with pagination
     const leadsQuery = `
@@ -80,17 +81,15 @@ export async function GET(request: NextRequest) {
       FROM leads l
       LEFT JOIN lead_sources ls ON l.source_id = ls.id
       LEFT JOIN users u ON l.assigned_to = u.id
-      ${whereClause}
+      WHERE ${whereClause}
       ORDER BY l.created_at DESC
       LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
     `
 
-    params.push(limit, offset)
-    const leads = await sql(leadsQuery, params)
+    queryParams.push(limit, offset)
+    const leads = await sql(leadsQuery, queryParams)
 
     const totalPages = Math.ceil(total / limit)
-    const hasNext = page < totalPages
-    const hasPrev = page > 1
 
     return NextResponse.json({
       leads,
@@ -99,8 +98,8 @@ export async function GET(request: NextRequest) {
         limit,
         total,
         totalPages,
-        hasNext,
-        hasPrev,
+        hasNext: page < totalPages,
+        hasPrev: page > 1,
       },
     })
   } catch (error) {
@@ -109,6 +108,15 @@ export async function GET(request: NextRequest) {
       {
         error: "Failed to fetch leads",
         details: error instanceof Error ? error.message : "Unknown error",
+        leads: [],
+        pagination: {
+          page: 1,
+          limit: 10,
+          total: 0,
+          totalPages: 0,
+          hasNext: false,
+          hasPrev: false,
+        },
       },
       { status: 500 },
     )
@@ -142,19 +150,20 @@ export async function POST(request: NextRequest) {
     }
 
     // Validate product category and subtype combination
-    if (product_category && product_subtype) {
-      const validCombinations = {
-        Motor: ["2w", "4w", "CV"],
-        Health: ["Individual", "Family", "Group", "Critical Illness"],
-        Life: ["Term", "ULIP", "Endowment", "Others"],
-        Travel: ["Domestic", "International", "Student", "Business"],
-        Pet: ["Dog", "Cat", "Exotic"],
-        Cyber: ["Individual", "SME", "Corporate"],
-        Corporate: ["Property", "Liability", "Marine", "Engineering"],
-        Marine: ["Cargo", "Hull", "Liability"],
-      }
+    const validCombinations = {
+      Motor: ["2w", "4w", "CV"],
+      Health: ["Individual", "Family", "Group", "Critical Illness"],
+      Life: ["Term", "ULIP", "Endowment", "Others"],
+      Travel: ["Domestic", "International", "Student", "Business"],
+      Pet: ["Dog", "Cat", "Exotic"],
+      Cyber: ["Individual", "SME", "Corporate"],
+      Corporate: ["Property", "Liability", "Marine", "Engineering"],
+      Marine: ["Cargo", "Hull", "Liability"],
+    }
 
-      if (!validCombinations[product_category as keyof typeof validCombinations]?.includes(product_subtype)) {
+    if (product_category && product_subtype) {
+      const validSubtypes = validCombinations[product_category as keyof typeof validCombinations]
+      if (!validSubtypes || !validSubtypes.includes(product_subtype)) {
         return NextResponse.json(
           { error: `Invalid product subtype '${product_subtype}' for category '${product_category}'` },
           { status: 400 },
@@ -164,29 +173,28 @@ export async function POST(request: NextRequest) {
 
     // Generate lead number
     const leadNumberResult = await sql`
-      SELECT COALESCE(MAX(CAST(SUBSTRING(lead_number FROM 5) AS INTEGER)), 0) + 1 as next_number
-      FROM leads 
-      WHERE lead_number LIKE 'LEAD%'
+      SELECT COALESCE(MAX(CAST(SUBSTRING(lead_number FROM 6) AS INTEGER)), 0) + 1 as next_number
+      FROM leads
+      WHERE lead_number LIKE 'LEAD-%'
     `
 
     const nextNumber = leadNumberResult[0]?.next_number || 1
-    const lead_number = `LEAD${nextNumber.toString().padStart(6, "0")}`
+    const lead_number = `LEAD-${nextNumber.toString().padStart(6, "0")}`
 
-    const query = `
+    // Insert lead
+    const insertQuery = `
       INSERT INTO leads (
         lead_number, source_id, first_name, last_name, email, phone,
         company_name, industry, lead_value, status, priority, assigned_to,
         expected_close_date, notes, product_category, product_subtype,
         created_at, updated_at
-      )
-      VALUES (
+      ) VALUES (
         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
         NOW(), NOW()
-      )
-      RETURNING *
+      ) RETURNING *
     `
 
-    const params = [
+    const result = await sql(insertQuery, [
       lead_number,
       source_id || null,
       first_name,
@@ -203,9 +211,7 @@ export async function POST(request: NextRequest) {
       notes || null,
       product_category || null,
       product_subtype || null,
-    ]
-
-    const result = await sql(query, params)
+    ])
 
     return NextResponse.json(result[0], { status: 201 })
   } catch (error) {

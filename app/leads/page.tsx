@@ -122,6 +122,8 @@ export default function LeadsPage() {
   const [leadSources, setLeadSources] = useState<LeadSource[]>([])
   const [users, setUsers] = useState<User[]>([])
   const [loading, setLoading] = useState(true)
+  const [sourcesLoading, setSourcesLoading] = useState(true)
+  const [usersLoading, setUsersLoading] = useState(true)
   const [pagination, setPagination] = useState({
     page: 1,
     limit: 10,
@@ -186,19 +188,26 @@ export default function LeadsPage() {
       if (productCategoryFilter !== "all") params.append("product_category", productCategoryFilter)
       if (searchQuery) params.append("search", searchQuery)
 
+      console.log("Fetching leads with params:", params.toString())
       const response = await fetch(`/api/leads?${params}`)
-      if (!response.ok) throw new Error("Failed to fetch leads")
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || "Failed to fetch leads")
+      }
 
       const data: PaginatedResponse = await response.json()
-      setLeads(data.leads)
+      console.log("Leads fetched:", data)
+      setLeads(data.leads || [])
       setPagination(data.pagination)
     } catch (error) {
       console.error("Error fetching leads:", error)
       toast({
         title: "Error",
-        description: "Failed to fetch leads",
+        description: error instanceof Error ? error.message : "Failed to fetch leads",
         variant: "destructive",
       })
+      setLeads([])
     } finally {
       setLoading(false)
     }
@@ -207,24 +216,75 @@ export default function LeadsPage() {
   // Fetch lead sources
   const fetchLeadSources = async () => {
     try {
+      setSourcesLoading(true)
+      console.log("Fetching lead sources...")
+
       const response = await fetch("/api/lead-sources")
-      if (!response.ok) throw new Error("Failed to fetch lead sources")
+      console.log("Lead sources response status:", response.status)
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || "Failed to fetch lead sources")
+      }
+
       const data = await response.json()
-      setLeadSources(data.sources || [])
+      console.log("Lead sources data received:", data)
+
+      const sources = data.sources || []
+      setLeadSources(sources)
+      console.log("Lead sources set:", sources.length, "sources")
+
+      if (sources.length === 0) {
+        console.warn("No lead sources found in database")
+        toast({
+          title: "Warning",
+          description: "No lead sources found. Please add some lead sources first.",
+          variant: "destructive",
+        })
+      }
     } catch (error) {
       console.error("Error fetching lead sources:", error)
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to fetch lead sources",
+        variant: "destructive",
+      })
+      setLeadSources([])
+    } finally {
+      setSourcesLoading(false)
     }
   }
 
   // Fetch users
   const fetchUsers = async () => {
     try {
+      setUsersLoading(true)
+      console.log("Fetching users...")
+
       const response = await fetch("/api/users")
-      if (!response.ok) throw new Error("Failed to fetch users")
+      console.log("Users response status:", response.status)
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || "Failed to fetch users")
+      }
+
       const data = await response.json()
-      setUsers(data.users || [])
+      console.log("Users data received:", data)
+
+      const users = data.users || []
+      setUsers(users)
+      console.log("Users set:", users.length, "users")
     } catch (error) {
       console.error("Error fetching users:", error)
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to fetch users",
+        variant: "destructive",
+      })
+      setUsers([])
+    } finally {
+      setUsersLoading(false)
     }
   }
 
@@ -249,6 +309,8 @@ export default function LeadsPage() {
         lead_value: formData.lead_value ? Number.parseFloat(formData.lead_value) : undefined,
       }
 
+      console.log("Submitting lead data:", submitData)
+
       const url = selectedLead ? `/api/leads/${selectedLead.id}` : "/api/leads"
       const method = selectedLead ? "PUT" : "POST"
 
@@ -262,6 +324,9 @@ export default function LeadsPage() {
         const error = await response.json()
         throw new Error(error.error || "Failed to save lead")
       }
+
+      const result = await response.json()
+      console.log("Lead saved successfully:", result)
 
       toast({
         title: "Success",
@@ -399,8 +464,8 @@ export default function LeadsPage() {
     })
   }
 
-  if (loading) {
-    return <div className="p-6">Loading leads...</div>
+  if (loading && sourcesLoading && usersLoading) {
+    return <div className="p-6">Loading leads management...</div>
   }
 
   return (
@@ -532,22 +597,34 @@ export default function LeadsPage() {
                   />
                 </div>
                 <div>
-                  <Label htmlFor="source_id">Source</Label>
+                  <Label htmlFor="source_id">Source {sourcesLoading && "(Loading...)"}</Label>
                   <Select
                     value={formData.source_id}
                     onValueChange={(value) => setFormData({ ...formData, source_id: value })}
+                    disabled={sourcesLoading}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="Select source" />
+                      <SelectValue placeholder={sourcesLoading ? "Loading sources..." : "Select source"} />
                     </SelectTrigger>
                     <SelectContent>
-                      {leadSources.map((source) => (
-                        <SelectItem key={source.id} value={source.id.toString()}>
-                          {source.name}
+                      {leadSources.length > 0 ? (
+                        leadSources.map((source) => (
+                          <SelectItem key={source.id} value={source.id.toString()}>
+                            {source.name}
+                          </SelectItem>
+                        ))
+                      ) : (
+                        <SelectItem value="no-sources" disabled>
+                          No sources available
                         </SelectItem>
-                      ))}
+                      )}
                     </SelectContent>
                   </Select>
+                  {leadSources.length === 0 && !sourcesLoading && (
+                    <p className="text-sm text-muted-foreground mt-1">
+                      No lead sources found. Please add some lead sources first.
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -590,20 +667,27 @@ export default function LeadsPage() {
                   </Select>
                 </div>
                 <div>
-                  <Label htmlFor="assigned_to">Assign To</Label>
+                  <Label htmlFor="assigned_to">Assign To {usersLoading && "(Loading...)"}</Label>
                   <Select
                     value={formData.assigned_to}
                     onValueChange={(value) => setFormData({ ...formData, assigned_to: value })}
+                    disabled={usersLoading}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="Select user" />
+                      <SelectValue placeholder={usersLoading ? "Loading users..." : "Select user"} />
                     </SelectTrigger>
                     <SelectContent>
-                      {users.map((user) => (
-                        <SelectItem key={user.id} value={user.id.toString()}>
-                          {user.name}
+                      {users.length > 0 ? (
+                        users.map((user) => (
+                          <SelectItem key={user.id} value={user.id.toString()}>
+                            {user.name}
+                          </SelectItem>
+                        ))
+                      ) : (
+                        <SelectItem value="no-users" disabled>
+                          No users available
                         </SelectItem>
-                      ))}
+                      )}
                     </SelectContent>
                   </Select>
                 </div>
@@ -639,6 +723,26 @@ export default function LeadsPage() {
           </DialogContent>
         </Dialog>
       </div>
+
+      {/* Debug Information */}
+      {process.env.NODE_ENV === "development" && (
+        <Card className="bg-yellow-50 border-yellow-200">
+          <CardHeader>
+            <CardTitle className="text-sm">Debug Information</CardTitle>
+          </CardHeader>
+          <CardContent className="text-xs space-y-1">
+            <div>
+              Lead Sources: {leadSources.length} loaded, Loading: {sourcesLoading.toString()}
+            </div>
+            <div>
+              Users: {users.length} loaded, Loading: {usersLoading.toString()}
+            </div>
+            <div>
+              Leads: {leads.length} loaded, Loading: {loading.toString()}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Filters */}
       <Card>
@@ -745,123 +849,133 @@ export default function LeadsPage() {
           <CardDescription>Manage your insurance sales leads and track their progress</CardDescription>
         </CardHeader>
         <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Lead #</TableHead>
-                <TableHead>Name</TableHead>
-                <TableHead>Company</TableHead>
-                <TableHead>Product</TableHead>
-                <TableHead>Source</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Priority</TableHead>
-                <TableHead>Assigned To</TableHead>
-                <TableHead>Expected Close</TableHead>
-                <TableHead>Value</TableHead>
-                <TableHead>Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {leads.map((lead) => (
-                <TableRow key={lead.id}>
-                  <TableCell className="font-medium">{lead.lead_number}</TableCell>
-                  <TableCell>
-                    <div>
-                      <div className="font-medium">
-                        {lead.first_name} {lead.last_name}
-                      </div>
-                      {lead.email && <div className="text-sm text-muted-foreground">{lead.email}</div>}
-                    </div>
-                  </TableCell>
-                  <TableCell>{lead.company_name || "-"}</TableCell>
-                  <TableCell>
-                    <div className="space-y-1">
-                      {lead.product_category && (
-                        <Badge
-                          className={
-                            productCategoryColors[lead.product_category as keyof typeof productCategoryColors] ||
-                            "bg-gray-100 text-gray-800"
-                          }
-                        >
-                          {lead.product_category}
-                        </Badge>
-                      )}
-                      {lead.product_subtype && (
-                        <div className="text-xs text-muted-foreground">{lead.product_subtype}</div>
-                      )}
-                      {!lead.product_category && "-"}
-                    </div>
-                  </TableCell>
-                  <TableCell>{lead.source_name || "-"}</TableCell>
-                  <TableCell>
-                    <Badge className={statusColors[lead.status]}>{lead.status}</Badge>
-                  </TableCell>
-                  <TableCell>
-                    <Badge className={priorityColors[lead.priority]}>{lead.priority}</Badge>
-                  </TableCell>
-                  <TableCell>{lead.assigned_user_name || "Unassigned"}</TableCell>
-                  <TableCell>{lead.expected_close_date || "-"}</TableCell>
-                  <TableCell>{lead.lead_value ? `$${lead.lead_value.toLocaleString()}` : "-"}</TableCell>
-                  <TableCell>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="sm">
-                          <MoreHorizontal className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => openEditDialog(lead)}>
-                          <Edit className="h-4 w-4 mr-2" />
-                          Edit
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => openAssignDialog(lead)}>
-                          <UserPlus className="h-4 w-4 mr-2" />
-                          Assign
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => handleDelete(lead.id)} className="text-red-600">
-                          <Trash2 className="h-4 w-4 mr-2" />
-                          Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </TableCell>
+          {loading ? (
+            <div className="text-center py-8">Loading leads...</div>
+          ) : leads.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              No leads found. Try adjusting your filters or create a new lead.
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Lead #</TableHead>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Company</TableHead>
+                  <TableHead>Product</TableHead>
+                  <TableHead>Source</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Priority</TableHead>
+                  <TableHead>Assigned To</TableHead>
+                  <TableHead>Expected Close</TableHead>
+                  <TableHead>Value</TableHead>
+                  <TableHead>Actions</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {leads.map((lead) => (
+                  <TableRow key={lead.id}>
+                    <TableCell className="font-medium">{lead.lead_number}</TableCell>
+                    <TableCell>
+                      <div>
+                        <div className="font-medium">
+                          {lead.first_name} {lead.last_name}
+                        </div>
+                        {lead.email && <div className="text-sm text-muted-foreground">{lead.email}</div>}
+                      </div>
+                    </TableCell>
+                    <TableCell>{lead.company_name || "-"}</TableCell>
+                    <TableCell>
+                      <div className="space-y-1">
+                        {lead.product_category && (
+                          <Badge
+                            className={
+                              productCategoryColors[lead.product_category as keyof typeof productCategoryColors] ||
+                              "bg-gray-100 text-gray-800"
+                            }
+                          >
+                            {lead.product_category}
+                          </Badge>
+                        )}
+                        {lead.product_subtype && (
+                          <div className="text-xs text-muted-foreground">{lead.product_subtype}</div>
+                        )}
+                        {!lead.product_category && "-"}
+                      </div>
+                    </TableCell>
+                    <TableCell>{lead.source_name || "-"}</TableCell>
+                    <TableCell>
+                      <Badge className={statusColors[lead.status]}>{lead.status}</Badge>
+                    </TableCell>
+                    <TableCell>
+                      <Badge className={priorityColors[lead.priority]}>{lead.priority}</Badge>
+                    </TableCell>
+                    <TableCell>{lead.assigned_user_name || "Unassigned"}</TableCell>
+                    <TableCell>{lead.expected_close_date || "-"}</TableCell>
+                    <TableCell>{lead.lead_value ? `$${lead.lead_value.toLocaleString()}` : "-"}</TableCell>
+                    <TableCell>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="sm">
+                            <MoreHorizontal className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => openEditDialog(lead)}>
+                            <Edit className="h-4 w-4 mr-2" />
+                            Edit
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => openAssignDialog(lead)}>
+                            <UserPlus className="h-4 w-4 mr-2" />
+                            Assign
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => handleDelete(lead.id)} className="text-red-600">
+                            <Trash2 className="h-4 w-4 mr-2" />
+                            Delete
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
 
           {/* Pagination */}
-          <div className="flex items-center justify-between mt-4">
-            <div className="text-sm text-muted-foreground">
-              Showing {(pagination.page - 1) * pagination.limit + 1} to{" "}
-              {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total} results
-            </div>
-            <div className="flex items-center space-x-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setPagination({ ...pagination, page: pagination.page - 1 })}
-                disabled={!pagination.hasPrev}
-              >
-                Previous
-              </Button>
-              <div className="text-sm">
-                Page {pagination.page} of {pagination.totalPages}
+          {pagination.totalPages > 1 && (
+            <div className="flex items-center justify-between mt-4">
+              <div className="text-sm text-muted-foreground">
+                Showing {(pagination.page - 1) * pagination.limit + 1} to{" "}
+                {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total} results
               </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setPagination({ ...pagination, page: pagination.page + 1 })}
-                disabled={!pagination.hasNext}
-              >
-                Next
-              </Button>
+              <div className="flex items-center space-x-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPagination({ ...pagination, page: pagination.page - 1 })}
+                  disabled={!pagination.hasPrev}
+                >
+                  Previous
+                </Button>
+                <div className="text-sm">
+                  Page {pagination.page} of {pagination.totalPages}
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPagination({ ...pagination, page: pagination.page + 1 })}
+                  disabled={!pagination.hasNext}
+                >
+                  Next
+                </Button>
+              </div>
             </div>
-          </div>
+          )}
         </CardContent>
       </Card>
 
-      {/* Edit Dialog */}
+      {/* Edit Dialog - Similar structure to Add Dialog */}
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
         <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
@@ -869,6 +983,7 @@ export default function LeadsPage() {
             <DialogDescription>Update lead information</DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4">
+            {/* Same form fields as Add Dialog */}
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label htmlFor="edit_first_name">First Name *</Label>
@@ -1095,16 +1210,20 @@ export default function LeadsPage() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
-            {users.map((user) => (
-              <div key={user.id} className="flex items-center justify-between p-3 border rounded-lg">
-                <div>
-                  <div className="font-medium">{user.name}</div>
-                  <div className="text-sm text-muted-foreground">{user.email}</div>
-                  <div className="text-xs text-muted-foreground">{user.role}</div>
+            {users.length > 0 ? (
+              users.map((user) => (
+                <div key={user.id} className="flex items-center justify-between p-3 border rounded-lg">
+                  <div>
+                    <div className="font-medium">{user.name}</div>
+                    <div className="text-sm text-muted-foreground">{user.email}</div>
+                    <div className="text-xs text-muted-foreground">{user.role}</div>
+                  </div>
+                  <Button onClick={() => handleAssign(user.id)}>Assign</Button>
                 </div>
-                <Button onClick={() => handleAssign(user.id)}>Assign</Button>
-              </div>
-            ))}
+              ))
+            ) : (
+              <div className="text-center py-4 text-muted-foreground">No users available for assignment</div>
+            )}
           </div>
         </DialogContent>
       </Dialog>

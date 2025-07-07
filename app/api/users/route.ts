@@ -1,70 +1,67 @@
-import { type NextRequest, NextResponse } from "next/server"
+import { NextResponse } from "next/server"
 import { sql } from "@/lib/db"
 
 export async function GET() {
   try {
-    // Create table if it doesn't exist
-    await sql.query(`
-      CREATE TABLE IF NOT EXISTS users (
-        id SERIAL PRIMARY KEY,
-        full_name TEXT NOT NULL,
-        email TEXT NOT NULL UNIQUE,
-        role TEXT NOT NULL,
-        is_active BOOLEAN NOT NULL DEFAULT true,
-        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-      )
-    `)
+    console.log("Fetching users from database...")
 
-    // Check if we need to seed sample users
-    const userCount = await sql.query(`SELECT COUNT(*) as count FROM users`)
-
-    if (userCount[0].count === "0") {
-      // Seed sample users
-      await sql.query(`
-        INSERT INTO users (full_name, email, role, is_active)
-        VALUES 
-          ('Admin User', 'admin@example.com', 'admin', true),
-          ('Claims Manager', 'manager@example.com', 'claims_manager', true),
-          ('Claims Adjuster', 'adjuster@example.com', 'claims_adjuster', true)
-      `)
-    }
-
-    const users = await sql.query(`
-      SELECT 
-        id, 
-        full_name as name, 
-        email, 
-        role, 
-        CASE WHEN is_active THEN 'active' ELSE 'inactive' END as status,
-        created_at
+    const rows = await sql`
+      SELECT id, name, email, role, is_active, created_at, updated_at
       FROM users
-      ORDER BY full_name
-    `)
+      WHERE is_active = true
+      ORDER BY name ASC
+    `
 
-    return NextResponse.json({ users })
+    console.log("Users query result:", rows)
+    console.log("Number of users found:", rows.length)
+
+    return NextResponse.json({
+      users: rows,
+      count: rows.length,
+    })
   } catch (error) {
     console.error("Error fetching users:", error)
-    return NextResponse.json({ error: "Failed to fetch users" }, { status: 500 })
+
+    return NextResponse.json(
+      {
+        error: "Failed to fetch users",
+        details: error instanceof Error ? error.message : "Unknown error",
+        users: [], // Return empty array as fallback
+      },
+      { status: 500 },
+    )
   }
 }
 
-export async function POST(request: NextRequest) {
+export async function POST(request: Request) {
   try {
-    const { name, email, role, status } = await request.json()
-    const isActive = status === "active"
+    const body = await request.json()
+    const { name, email, role = "user", is_active = true } = body
 
-    const result = await sql.query(
-      `INSERT INTO users (full_name, email, role, is_active)
-       VALUES ($1, $2, $3, $4)
-       RETURNING id, full_name as name, email, role, 
-                 CASE WHEN is_active THEN 'active' ELSE 'inactive' END as status,
-                 created_at`,
-      [name, email, role, isActive],
-    )
+    if (!name || !email) {
+      return NextResponse.json({ error: "Name and email are required" }, { status: 400 })
+    }
 
-    return NextResponse.json({ user: result[0] }, { status: 201 })
+    const rows = await sql`
+      INSERT INTO users (name, email, role, is_active, created_at, updated_at)
+      VALUES (${name}, ${email}, ${role}, ${is_active}, NOW(), NOW())
+      RETURNING *
+    `
+
+    return NextResponse.json(rows[0], { status: 201 })
   } catch (error) {
     console.error("Error creating user:", error)
-    return NextResponse.json({ error: "Failed to create user" }, { status: 500 })
+
+    if (error instanceof Error && error.message.includes("duplicate key")) {
+      return NextResponse.json({ error: "A user with this email already exists" }, { status: 409 })
+    }
+
+    return NextResponse.json(
+      {
+        error: "Failed to create user",
+        details: error instanceof Error ? error.message : "Unknown error",
+      },
+      { status: 500 },
+    )
   }
 }
