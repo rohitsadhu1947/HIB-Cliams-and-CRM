@@ -1,10 +1,10 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { neon } from "@neondatabase/serverless"
-
-const sql = neon(process.env.DATABASE_URL!)
+import { sql } from "@/lib/db"
 
 export async function GET() {
   try {
+    console.log("Fetching lead sources...")
+
     const query = `
       SELECT id, name, description, is_active, created_at, updated_at
       FROM lead_sources
@@ -12,12 +12,19 @@ export async function GET() {
       ORDER BY name ASC
     `
 
-    const { rows } = await sql.query(query, [])
+    const rows = await sql(query)
+    console.log("Lead sources fetched:", rows.length)
 
     return NextResponse.json({ sources: rows })
   } catch (error) {
     console.error("Error fetching lead sources:", error)
-    return NextResponse.json({ error: "Failed to fetch lead sources" }, { status: 500 })
+    return NextResponse.json(
+      {
+        error: "Failed to fetch lead sources",
+        details: error instanceof Error ? error.message : "Unknown error",
+      },
+      { status: 500 },
+    )
   }
 }
 
@@ -36,11 +43,17 @@ export async function POST(request: NextRequest) {
       RETURNING *
     `
 
-    const { rows } = await sql.query(query, [name, description || null, is_active])
+    const rows = await sql(query, [name, description || null, is_active])
 
     return NextResponse.json(rows[0], { status: 201 })
   } catch (error) {
     console.error("Error creating lead source:", error)
-    return NextResponse.json({ error: "Failed to create lead source" }, { status: 500 })
+    return NextResponse.json(
+      {
+        error: "Failed to create lead source",
+        details: error instanceof Error ? error.message : "Unknown error",
+      },
+      { status: 500 },
+    )
   }
 }

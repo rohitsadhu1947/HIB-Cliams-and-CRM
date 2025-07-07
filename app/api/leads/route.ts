@@ -1,170 +1,75 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { sql } from "@/lib/db"
 
-// TypeScript interfaces
-interface Lead {
-  id: number
-  lead_number: string
-  source_id?: number
-  first_name: string
-  last_name: string
-  email?: string
-  phone?: string
-  company_name?: string
-  industry?: string
-  lead_value?: number
-  status: string
-  priority: string
-  assigned_to?: number
-  assigned_at?: string
-  expected_close_date?: string
-  notes?: string
-  product_category?: string
-  product_subtype?: string
-  created_at: string
-  updated_at: string
-}
-
-interface LeadWithRelations extends Lead {
-  source_name?: string
-  assigned_user_name?: string
-}
-
-interface CreateLeadRequest {
-  source_id?: number
-  first_name: string
-  last_name: string
-  email?: string
-  phone?: string
-  company_name?: string
-  industry?: string
-  lead_value?: number
-  status?: string
-  priority?: string
-  assigned_to?: number
-  expected_close_date?: string
-  notes?: string
-  product_category?: string
-  product_subtype?: string
-}
-
-interface PaginatedResponse<T> {
-  leads: T[]
-  pagination: {
-    page: number
-    limit: number
-    total: number
-    totalPages: number
-    hasNext: boolean
-    hasPrev: boolean
-  }
-}
-
-// Product categories and their subtypes
-const PRODUCT_CATEGORIES = {
-  Motor: ["2w", "4w", "CV"],
-  Health: ["Individual", "Family", "Group", "Critical Illness"],
-  Life: ["Term", "ULIP", "Endowment", "Others"],
-  Travel: ["Domestic", "International", "Student", "Business"],
-  Pet: ["Dog", "Cat", "Exotic"],
-  Cyber: ["Individual", "SME", "Corporate"],
-  Corporate: ["Property", "Liability", "Marine", "Engineering"],
-  Marine: ["Cargo", "Hull", "Liability"],
-} as const
-
-type ProductCategory = keyof typeof PRODUCT_CATEGORIES
-type ProductSubtype = (typeof PRODUCT_CATEGORIES)[ProductCategory][number]
-
-const validateProductCategory = (category: string): category is ProductCategory => {
-  return Object.keys(PRODUCT_CATEGORIES).includes(category)
-}
-
-const validateProductSubtype = (category: ProductCategory, subtype: string): boolean => {
-  return PRODUCT_CATEGORIES[category].includes(subtype as any)
-}
-
 export async function GET(request: NextRequest) {
   try {
-    // Check database connection
-    if (!process.env.DATABASE_URL) {
-      console.error("DATABASE_URL environment variable is not set")
-      return NextResponse.json({ error: "Database configuration error" }, { status: 500 })
-    }
-
     const { searchParams } = new URL(request.url)
     const page = Number.parseInt(searchParams.get("page") || "1")
     const limit = Number.parseInt(searchParams.get("limit") || "10")
-    const search = searchParams.get("search")
     const status = searchParams.get("status")
-    const sourceId = searchParams.get("source_id")
-    const assignedTo = searchParams.get("assigned_to")
-    const productCategory = searchParams.get("product_category")
+    const source_id = searchParams.get("source_id")
+    const assigned_to = searchParams.get("assigned_to")
+    const product_category = searchParams.get("product_category")
+    const search = searchParams.get("search")
 
     const offset = (page - 1) * limit
 
-    // Build WHERE conditions and params
-    const conditions: string[] = []
-    const params: any[] = []
+    // Build WHERE conditions
+    const conditions = []
+    const params = []
     let paramIndex = 1
 
-    if (search) {
-      conditions.push(
-        `(l.first_name ILIKE $${paramIndex} OR l.last_name ILIKE $${paramIndex} OR l.email ILIKE $${paramIndex} OR l.company_name ILIKE $${paramIndex})`,
-      )
-      params.push(`%${search}%`)
-      paramIndex++
-    }
-
-    if (status) {
+    if (status && status !== "all") {
       conditions.push(`l.status = $${paramIndex}`)
       params.push(status)
       paramIndex++
     }
 
-    if (sourceId) {
+    if (source_id && source_id !== "all") {
       conditions.push(`l.source_id = $${paramIndex}`)
-      params.push(Number.parseInt(sourceId))
+      params.push(Number.parseInt(source_id))
       paramIndex++
     }
 
-    if (assignedTo) {
-      if (assignedTo === "unassigned") {
-        conditions.push(`l.assigned_to IS NULL`)
-        // Do NOT increment paramIndex or add to params
+    if (assigned_to && assigned_to !== "all") {
+      if (assigned_to === "unassigned") {
+        conditions.push("l.assigned_to IS NULL")
       } else {
         conditions.push(`l.assigned_to = $${paramIndex}`)
-        params.push(Number.parseInt(assignedTo))
+        params.push(Number.parseInt(assigned_to))
         paramIndex++
       }
     }
 
-    if (productCategory && productCategory !== "all") {
+    if (product_category && product_category !== "all") {
       conditions.push(`l.product_category = $${paramIndex}`)
-      params.push(productCategory)
+      params.push(product_category)
+      paramIndex++
+    }
+
+    if (search) {
+      conditions.push(`(
+        l.first_name ILIKE $${paramIndex} OR 
+        l.last_name ILIKE $${paramIndex} OR 
+        l.email ILIKE $${paramIndex} OR 
+        l.company_name ILIKE $${paramIndex} OR
+        l.lead_number ILIKE $${paramIndex}
+      )`)
+      params.push(`%${search}%`)
       paramIndex++
     }
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : ""
 
-    // Log the count query and params for debugging
-    const countQuery = `SELECT COUNT(*) as total FROM leads l ${whereClause}`
-    console.log("Count Query:", countQuery, params)
+    // Get total count
+    const countQuery = `
+      SELECT COUNT(*) as total
+      FROM leads l
+      ${whereClause}
+    `
 
-    // Defensive count query
-    let countRows
-    try {
-      countRows = await sql(countQuery, params)
-    } catch (err) {
-      console.error("SQL error in count query:", err)
-      return NextResponse.json({ error: "SQL error in count query" }, { status: 500 })
-    }
-
-    if (!countRows[0] || countRows[0].total === undefined || countRows[0].total === null) {
-      console.error("Count query returned no rows or invalid result:", countRows)
-      return NextResponse.json({ error: "Count query failed" }, { status: 500 })
-    }
-
-    const total = Number.parseInt(countRows[0].total)
+    const countResult = await sql(countQuery, params)
+    const total = Number(countResult[0]?.total || 0)
 
     // Get leads with pagination
     const leadsQuery = `
@@ -180,45 +85,39 @@ export async function GET(request: NextRequest) {
       LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
     `
 
-    const leadsParams = [...params, limit, offset]
-    console.log("Leads Query:", leadsQuery, leadsParams)
-
-    let rows
-    try {
-      rows = await sql(leadsQuery, leadsParams)
-    } catch (err) {
-      console.error("SQL error in leads query:", err)
-      return NextResponse.json({ error: "SQL error in leads query" }, { status: 500 })
-    }
+    params.push(limit, offset)
+    const leads = await sql(leadsQuery, params)
 
     const totalPages = Math.ceil(total / limit)
+    const hasNext = page < totalPages
+    const hasPrev = page > 1
 
     return NextResponse.json({
-      leads: rows,
+      leads,
       pagination: {
         page,
         limit,
         total,
         totalPages,
-        hasNext: page < totalPages,
-        hasPrev: page > 1,
+        hasNext,
+        hasPrev,
       },
     })
   } catch (error) {
     console.error("Error fetching leads:", error)
-    return NextResponse.json({ error: "Failed to fetch leads" }, { status: 500 })
+    return NextResponse.json(
+      {
+        error: "Failed to fetch leads",
+        details: error instanceof Error ? error.message : "Unknown error",
+      },
+      { status: 500 },
+    )
   }
 }
 
 export async function POST(request: NextRequest) {
   try {
-    // Check database connection
-    if (!process.env.DATABASE_URL) {
-      console.error("DATABASE_URL environment variable is not set")
-      return NextResponse.json({ error: "Database configuration error" }, { status: 500 })
-    }
-
-    const body: CreateLeadRequest = await request.json()
+    const body = await request.json()
     const {
       source_id,
       first_name,
@@ -237,135 +136,86 @@ export async function POST(request: NextRequest) {
       product_subtype,
     } = body
 
-    // Validate required fields
+    // Validation
     if (!first_name || !last_name) {
       return NextResponse.json({ error: "First name and last name are required" }, { status: 400 })
     }
 
-    // Validate field lengths
-    if (first_name.length > 100 || last_name.length > 100) {
-      return NextResponse.json({ error: "Name fields must be less than 100 characters" }, { status: 400 })
-    }
+    // Validate product category and subtype combination
+    if (product_category && product_subtype) {
+      const validCombinations = {
+        Motor: ["2w", "4w", "CV"],
+        Health: ["Individual", "Family", "Group", "Critical Illness"],
+        Life: ["Term", "ULIP", "Endowment", "Others"],
+        Travel: ["Domestic", "International", "Student", "Business"],
+        Pet: ["Dog", "Cat", "Exotic"],
+        Cyber: ["Individual", "SME", "Corporate"],
+        Corporate: ["Property", "Liability", "Marine", "Engineering"],
+        Marine: ["Cargo", "Hull", "Liability"],
+      }
 
-    // Validate product category and subtype
-    if (product_category && !validateProductCategory(product_category)) {
-      return NextResponse.json({ error: "Invalid product category" }, { status: 400 })
-    }
-
-    if (product_category && product_subtype && !validateProductSubtype(product_category, product_subtype)) {
-      return NextResponse.json({ error: "Invalid product subtype for the selected category" }, { status: 400 })
-    }
-
-    // Check for duplicate email if provided
-    if (email) {
-      const duplicateRows = await sql("SELECT id FROM leads WHERE email = $1", [email])
-      if (duplicateRows.length > 0) {
-        return NextResponse.json({ error: "A lead with this email already exists" }, { status: 409 })
+      if (!validCombinations[product_category as keyof typeof validCombinations]?.includes(product_subtype)) {
+        return NextResponse.json(
+          { error: `Invalid product subtype '${product_subtype}' for category '${product_category}'` },
+          { status: 400 },
+        )
       }
     }
 
     // Generate lead number
-    const leadNumberRows = await sql(
-      "SELECT COALESCE(MAX(CAST(SUBSTRING(lead_number FROM 6) AS INTEGER)), 0) + 1 as next_number FROM leads WHERE lead_number LIKE 'LEAD-%'",
-      [],
-    )
+    const leadNumberResult = await sql`
+      SELECT COALESCE(MAX(CAST(SUBSTRING(lead_number FROM 5) AS INTEGER)), 0) + 1 as next_number
+      FROM leads 
+      WHERE lead_number LIKE 'LEAD%'
+    `
 
-    let nextNumber = 1
-    if (leadNumberRows[0] && leadNumberRows[0].next_number) {
-      nextNumber = leadNumberRows[0].next_number
-    }
+    const nextNumber = leadNumberResult[0]?.next_number || 1
+    const lead_number = `LEAD${nextNumber.toString().padStart(6, "0")}`
 
-    const leadNumber = `LEAD-${String(nextNumber).padStart(6, "0")}`
-
-    // Insert lead
-    const insertQuery = `
+    const query = `
       INSERT INTO leads (
         lead_number, source_id, first_name, last_name, email, phone,
         company_name, industry, lead_value, status, priority, assigned_to,
-        expected_close_date, notes, product_category, product_subtype, created_at, updated_at
-      ) VALUES (
-        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, NOW(), NOW()
-      ) RETURNING *
+        expected_close_date, notes, product_category, product_subtype,
+        created_at, updated_at
+      )
+      VALUES (
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
+        NOW(), NOW()
+      )
+      RETURNING *
     `
 
-    console.log("Insert Lead Query:", insertQuery)
-    console.log("Insert Lead Params:", [
-      leadNumber,
+    const params = [
+      lead_number,
       source_id || null,
-      first_name.trim(),
-      last_name.trim(),
-      email?.trim() || null,
-      phone?.trim() || null,
-      company_name?.trim() || null,
-      industry?.trim() || null,
+      first_name,
+      last_name,
+      email || null,
+      phone || null,
+      company_name || null,
+      industry || null,
       lead_value || null,
       status,
       priority,
       assigned_to || null,
       expected_close_date || null,
-      notes?.trim() || null,
+      notes || null,
       product_category || null,
       product_subtype || null,
-    ])
+    ]
 
-    const insertRows = await sql(insertQuery, [
-      leadNumber,
-      source_id || null,
-      first_name.trim(),
-      last_name.trim(),
-      email?.trim() || null,
-      phone?.trim() || null,
-      company_name?.trim() || null,
-      industry?.trim() || null,
-      lead_value || null,
-      status,
-      priority,
-      assigned_to || null,
-      expected_close_date || null,
-      notes?.trim() || null,
-      product_category || null,
-      product_subtype || null,
-    ])
+    const result = await sql(query, params)
 
-    if (insertRows.length === 0) {
-      return NextResponse.json({ error: "Failed to create lead" }, { status: 500 })
-    }
-
-    // Fetch the created lead with related data
-    const createdLeadQuery = `
-      SELECT 
-        l.*,
-        ls.name as source_name,
-        u.name as assigned_user_name
-      FROM leads l
-      LEFT JOIN lead_sources ls ON l.source_id = ls.id
-      LEFT JOIN users u ON l.assigned_to = u.id
-      WHERE l.id = $1
-    `
-
-    console.log("Created Lead Query:", createdLeadQuery, [insertRows[0].id])
-
-    const createdLeadRows = await sql(createdLeadQuery, [insertRows[0].id])
-
-    if (createdLeadRows.length === 0) {
-      return NextResponse.json(insertRows[0], { status: 201 })
-    }
-
-    return NextResponse.json(createdLeadRows[0], { status: 201 })
+    return NextResponse.json(result[0], { status: 201 })
   } catch (error) {
     console.error("Error creating lead:", error)
-
-    // Handle specific database errors
-    if (error instanceof Error) {
-      if (error.message.includes("duplicate key")) {
-        return NextResponse.json({ error: "A lead with this information already exists" }, { status: 409 })
-      }
-
-      if (error.message.includes("foreign key")) {
-        return NextResponse.json({ error: "Invalid reference to related data" }, { status: 400 })
-      }
-    }
-
-    return NextResponse.json({ error: "Failed to create lead" }, { status: 500 })
+    return NextResponse.json(
+      {
+        error: "Failed to create lead",
+        details: error instanceof Error ? error.message : "Unknown error",
+      },
+      { status: 500 },
+    )
   }
 }
