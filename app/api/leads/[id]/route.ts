@@ -13,7 +13,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
       SELECT 
         l.*,
         ls.name as source_name,
-        u.name as assigned_user_name
+        u.full_name as assigned_user_name
       FROM leads l
       LEFT JOIN lead_sources ls ON l.source_id = ls.id
       LEFT JOIN users u ON l.assigned_to = u.id
