@@ -113,14 +113,34 @@ export async function GET(request: NextRequest) {
       WHERE ${whereClause}
     `
 
+    console.log("Executing count query:", countQuery)
     const countResult = await sql(countQuery, queryParams)
     const total = Number.parseInt(countResult[0]?.total || "0")
-    console.log("Total leads:", total)
+    console.log("Total leads found:", total)
 
     // Get leads with pagination
     const leadsQuery = `
       SELECT 
-        l.*,
+        l.id,
+        l.lead_number,
+        l.source_id,
+        l.first_name,
+        l.last_name,
+        l.email,
+        l.phone,
+        l.company_name,
+        l.industry,
+        l.lead_value,
+        l.status,
+        l.priority,
+        l.assigned_to,
+        l.assigned_at,
+        l.expected_close_date,
+        l.notes,
+        l.product_category,
+        l.product_subtype,
+        l.created_at,
+        l.updated_at,
         ls.name as source_name,
         u.name as assigned_user_name
       FROM leads l
@@ -132,12 +152,16 @@ export async function GET(request: NextRequest) {
     `
 
     queryParams.push(limit, offset)
+    console.log("Executing leads query:", leadsQuery)
+    console.log("Final query params:", queryParams)
+
     const leads = await sql(leadsQuery, queryParams)
     console.log("Leads fetched:", leads.length, "records")
+    console.log("Sample lead data:", leads[0] ? JSON.stringify(leads[0], null, 2) : "No leads found")
 
     const totalPages = Math.ceil(total / limit)
 
-    return NextResponse.json({
+    const response = {
       leads,
       pagination: {
         page,
@@ -148,7 +172,10 @@ export async function GET(request: NextRequest) {
         hasPrev: page > 1,
       },
       success: true,
-    })
+    }
+
+    console.log("Returning response:", JSON.stringify(response, null, 2))
+    return NextResponse.json(response)
   } catch (error) {
     console.error("=== LEADS API GET ERROR ===")
     console.error("Error type:", typeof error)
@@ -241,28 +268,6 @@ export async function POST(request: NextRequest) {
     const lead_number = `LEAD-${nextNumber.toString().padStart(6, "0")}`
     console.log("Generated lead number:", lead_number)
 
-    // Prepare insert data
-    const insertData = {
-      lead_number,
-      source_id: source_id || null,
-      first_name,
-      last_name,
-      email: email || null,
-      phone: phone || null,
-      company_name: company_name || null,
-      industry: industry || null,
-      lead_value: lead_value || null,
-      status,
-      priority,
-      assigned_to: assigned_to || null,
-      expected_close_date: expected_close_date || null,
-      notes: notes || null,
-      product_category: product_category || null,
-      product_subtype: product_subtype || null,
-    }
-
-    console.log("Insert data prepared:", JSON.stringify(insertData, null, 2))
-
     // Insert lead
     const result = await sql`
       INSERT INTO leads (
@@ -271,12 +276,11 @@ export async function POST(request: NextRequest) {
         expected_close_date, notes, product_category, product_subtype,
         created_at, updated_at
       ) VALUES (
-        ${insertData.lead_number}, ${insertData.source_id}, ${insertData.first_name}, 
-        ${insertData.last_name}, ${insertData.email}, ${insertData.phone},
-        ${insertData.company_name}, ${insertData.industry}, ${insertData.lead_value}, 
-        ${insertData.status}, ${insertData.priority}, ${insertData.assigned_to},
-        ${insertData.expected_close_date}, ${insertData.notes}, ${insertData.product_category}, 
-        ${insertData.product_subtype}, NOW(), NOW()
+        ${lead_number}, ${source_id || null}, ${first_name}, ${last_name}, 
+        ${email || null}, ${phone || null}, ${company_name || null}, ${industry || null}, 
+        ${lead_value || null}, ${status}, ${priority}, ${assigned_to || null},
+        ${expected_close_date || null}, ${notes || null}, ${product_category || null}, 
+        ${product_subtype || null}, NOW(), NOW()
       ) RETURNING *
     `
 

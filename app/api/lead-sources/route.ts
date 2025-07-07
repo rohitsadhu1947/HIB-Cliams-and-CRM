@@ -3,9 +3,9 @@ import { sql } from "@/lib/db"
 
 export async function GET() {
   try {
-    console.log("=== LEAD SOURCES API: Starting request ===")
+    console.log("=== LEAD SOURCES API GET: Starting request ===")
 
-    // First, let's check if the table exists
+    // Check if lead_sources table exists
     const tableExists = await sql`
       SELECT EXISTS (
         SELECT FROM information_schema.tables 
@@ -16,7 +16,9 @@ export async function GET() {
     console.log("Lead sources table exists:", tableExists[0]?.exists)
 
     if (!tableExists[0]?.exists) {
-      console.log("Creating lead_sources table...")
+      console.log("Creating lead_sources table and sample data...")
+
+      // Create table
       await sql`
         CREATE TABLE lead_sources (
           id SERIAL PRIMARY KEY,
@@ -32,35 +34,34 @@ export async function GET() {
       await sql`
         INSERT INTO lead_sources (name, description, is_active) VALUES
         ('Website', 'Leads from company website', true),
-        ('Social Media', 'Leads from social platforms', true),
-        ('Referral', 'Customer referrals', true),
-        ('Cold Calling', 'Cold calling campaigns', true),
-        ('Email Marketing', 'Email campaigns', true)
+        ('Social Media', 'Leads from social media platforms', true),
+        ('Referral', 'Leads from customer referrals', true),
+        ('Cold Calling', 'Leads from cold calling campaigns', true),
+        ('Email Marketing', 'Leads from email campaigns', true),
+        ('Trade Shows', 'Leads from trade shows and events', true),
+        ('Online Ads', 'Leads from online advertising', true),
+        ('Walk-in', 'Walk-in customers', true)
       `
-      console.log("Lead sources table created and seeded")
+      console.log("Lead sources table created with sample data")
     }
 
-    // Now fetch the data
+    // Fetch all active lead sources
     const sources = await sql`
       SELECT id, name, description, is_active, created_at, updated_at
       FROM lead_sources 
-      WHERE is_active = true
+      WHERE is_active = true 
       ORDER BY name ASC
     `
 
     console.log("Lead sources fetched:", sources.length, "records")
-    console.log("Sample source:", sources[0])
 
     return NextResponse.json({
-      sources: sources,
-      count: sources.length,
+      sources,
       success: true,
     })
   } catch (error) {
     console.error("=== LEAD SOURCES API ERROR ===")
-    console.error("Error type:", typeof error)
-    console.error("Error message:", error instanceof Error ? error.message : String(error))
-    console.error("Error stack:", error instanceof Error ? error.stack : "No stack trace")
+    console.error("Error:", error)
 
     return NextResponse.json(
       {
@@ -76,11 +77,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    console.log("=== LEAD SOURCES POST: Starting request ===")
-
     const body = await request.json()
-    console.log("Request body:", body)
-
     const { name, description, is_active = true } = body
 
     if (!name) {
@@ -90,15 +87,12 @@ export async function POST(request: Request) {
     const result = await sql`
       INSERT INTO lead_sources (name, description, is_active, created_at, updated_at)
       VALUES (${name}, ${description || null}, ${is_active}, NOW(), NOW())
-      RETURNING id, name, description, is_active, created_at, updated_at
+      RETURNING *
     `
 
-    console.log("Lead source created:", result[0])
     return NextResponse.json(result[0], { status: 201 })
   } catch (error) {
-    console.error("=== LEAD SOURCES POST ERROR ===")
-    console.error("Error:", error)
-
+    console.error("Error creating lead source:", error)
     return NextResponse.json(
       {
         error: "Failed to create lead source",

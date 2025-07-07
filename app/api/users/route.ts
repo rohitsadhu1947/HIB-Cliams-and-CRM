@@ -3,7 +3,7 @@ import { sql } from "@/lib/db"
 
 export async function GET() {
   try {
-    console.log("=== USERS API: Starting request ===")
+    console.log("=== USERS API GET: Starting request ===")
 
     // Check if users table exists
     const tableExists = await sql`
@@ -16,7 +16,9 @@ export async function GET() {
     console.log("Users table exists:", tableExists[0]?.exists)
 
     if (!tableExists[0]?.exists) {
-      console.log("Creating users table...")
+      console.log("Creating users table and sample data...")
+
+      // Create table
       await sql`
         CREATE TABLE users (
           id SERIAL PRIMARY KEY,
@@ -29,38 +31,35 @@ export async function GET() {
         )
       `
 
-      // Insert sample users
+      // Insert sample data
       await sql`
         INSERT INTO users (name, email, role, is_active) VALUES
         ('John Smith', 'john.smith@company.com', 'admin', true),
         ('Sarah Johnson', 'sarah.johnson@company.com', 'manager', true),
         ('Mike Davis', 'mike.davis@company.com', 'agent', true),
-        ('Lisa Wilson', 'lisa.wilson@company.com', 'agent', true)
+        ('Lisa Wilson', 'lisa.wilson@company.com', 'agent', true),
+        ('Tom Brown', 'tom.brown@company.com', 'agent', true)
       `
-      console.log("Users table created and seeded")
+      console.log("Users table created with sample data")
     }
 
-    // Fetch users
+    // Fetch all active users
     const users = await sql`
       SELECT id, name, email, role, is_active, created_at, updated_at
       FROM users 
-      WHERE is_active = true
+      WHERE is_active = true 
       ORDER BY name ASC
     `
 
     console.log("Users fetched:", users.length, "records")
-    console.log("Sample user:", users[0])
 
     return NextResponse.json({
-      users: users,
-      count: users.length,
+      users,
       success: true,
     })
   } catch (error) {
     console.error("=== USERS API ERROR ===")
-    console.error("Error type:", typeof error)
-    console.error("Error message:", error instanceof Error ? error.message : String(error))
-    console.error("Error stack:", error instanceof Error ? error.stack : "No stack trace")
+    console.error("Error:", error)
 
     return NextResponse.json(
       {
@@ -76,11 +75,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    console.log("=== USERS POST: Starting request ===")
-
     const body = await request.json()
-    console.log("Request body:", body)
-
     const { name, email, role = "user", is_active = true } = body
 
     if (!name || !email) {
@@ -90,19 +85,12 @@ export async function POST(request: Request) {
     const result = await sql`
       INSERT INTO users (name, email, role, is_active, created_at, updated_at)
       VALUES (${name}, ${email}, ${role}, ${is_active}, NOW(), NOW())
-      RETURNING id, name, email, role, is_active, created_at, updated_at
+      RETURNING *
     `
 
-    console.log("User created:", result[0])
     return NextResponse.json(result[0], { status: 201 })
   } catch (error) {
-    console.error("=== USERS POST ERROR ===")
-    console.error("Error:", error)
-
-    if (error instanceof Error && error.message.includes("duplicate key")) {
-      return NextResponse.json({ error: "User with this email already exists" }, { status: 409 })
-    }
-
+    console.error("Error creating user:", error)
     return NextResponse.json(
       {
         error: "Failed to create user",

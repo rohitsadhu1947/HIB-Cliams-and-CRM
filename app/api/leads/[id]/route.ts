@@ -3,11 +3,9 @@ import { sql } from "@/lib/db"
 
 export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
   try {
-    console.log("=== LEADS [ID] GET: Starting request ===")
-    console.log("Lead ID:", params.id)
+    const id = Number.parseInt(params.id)
 
-    const leadId = Number.parseInt(params.id)
-    if (isNaN(leadId)) {
+    if (isNaN(id)) {
       return NextResponse.json({ error: "Invalid lead ID" }, { status: 400 })
     }
 
@@ -19,19 +17,16 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
       FROM leads l
       LEFT JOIN lead_sources ls ON l.source_id = ls.id
       LEFT JOIN users u ON l.assigned_to = u.id
-      WHERE l.id = ${leadId}
+      WHERE l.id = ${id}
     `
 
     if (result.length === 0) {
       return NextResponse.json({ error: "Lead not found" }, { status: 404 })
     }
 
-    console.log("Lead found:", result[0])
     return NextResponse.json(result[0])
   } catch (error) {
-    console.error("=== LEADS [ID] GET ERROR ===")
-    console.error("Error:", error)
-
+    console.error("Error fetching lead:", error)
     return NextResponse.json(
       {
         error: "Failed to fetch lead",
@@ -44,17 +39,13 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 
 export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
   try {
-    console.log("=== LEADS [ID] PUT: Starting request ===")
-    console.log("Lead ID:", params.id)
+    const id = Number.parseInt(params.id)
 
-    const leadId = Number.parseInt(params.id)
-    if (isNaN(leadId)) {
+    if (isNaN(id)) {
       return NextResponse.json({ error: "Invalid lead ID" }, { status: 400 })
     }
 
     const body = await request.json()
-    console.log("Update data:", JSON.stringify(body, null, 2))
-
     const {
       source_id,
       first_name,
@@ -78,6 +69,28 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
       return NextResponse.json({ error: "First name and last name are required" }, { status: 400 })
     }
 
+    // Validate product category and subtype combination
+    const validCombinations = {
+      Motor: ["2w", "4w", "CV"],
+      Health: ["Individual", "Family", "Group", "Critical Illness"],
+      Life: ["Term", "ULIP", "Endowment", "Others"],
+      Travel: ["Domestic", "International", "Student", "Business"],
+      Pet: ["Dog", "Cat", "Exotic"],
+      Cyber: ["Individual", "SME", "Corporate"],
+      Corporate: ["Property", "Liability", "Marine", "Engineering"],
+      Marine: ["Cargo", "Hull", "Liability"],
+    }
+
+    if (product_category && product_subtype) {
+      const validSubtypes = validCombinations[product_category as keyof typeof validCombinations]
+      if (!validSubtypes || !validSubtypes.includes(product_subtype)) {
+        return NextResponse.json(
+          { error: `Invalid product subtype '${product_subtype}' for category '${product_category}'` },
+          { status: 400 },
+        )
+      }
+    }
+
     const result = await sql`
       UPDATE leads SET
         source_id = ${source_id || null},
@@ -96,7 +109,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
         product_category = ${product_category || null},
         product_subtype = ${product_subtype || null},
         updated_at = NOW()
-      WHERE id = ${leadId}
+      WHERE id = ${id}
       RETURNING *
     `
 
@@ -104,12 +117,9 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
       return NextResponse.json({ error: "Lead not found" }, { status: 404 })
     }
 
-    console.log("Lead updated:", result[0])
     return NextResponse.json(result[0])
   } catch (error) {
-    console.error("=== LEADS [ID] PUT ERROR ===")
-    console.error("Error:", error)
-
+    console.error("Error updating lead:", error)
     return NextResponse.json(
       {
         error: "Failed to update lead",
@@ -122,30 +132,25 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
 
 export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
   try {
-    console.log("=== LEADS [ID] DELETE: Starting request ===")
-    console.log("Lead ID:", params.id)
+    const id = Number.parseInt(params.id)
 
-    const leadId = Number.parseInt(params.id)
-    if (isNaN(leadId)) {
+    if (isNaN(id)) {
       return NextResponse.json({ error: "Invalid lead ID" }, { status: 400 })
     }
 
     const result = await sql`
       DELETE FROM leads 
-      WHERE id = ${leadId}
-      RETURNING id
+      WHERE id = ${id}
+      RETURNING *
     `
 
     if (result.length === 0) {
       return NextResponse.json({ error: "Lead not found" }, { status: 404 })
     }
 
-    console.log("Lead deleted:", result[0])
     return NextResponse.json({ message: "Lead deleted successfully" })
   } catch (error) {
-    console.error("=== LEADS [ID] DELETE ERROR ===")
-    console.error("Error:", error)
-
+    console.error("Error deleting lead:", error)
     return NextResponse.json(
       {
         error: "Failed to delete lead",
