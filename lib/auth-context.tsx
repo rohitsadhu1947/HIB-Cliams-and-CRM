@@ -27,6 +27,7 @@ const ROLE_PERMISSIONS = {
     "dashboard",
     "claims",
     "policies",
+    "renewals",
     "vehicles",
     "policy-holders",
     "surveyors",
