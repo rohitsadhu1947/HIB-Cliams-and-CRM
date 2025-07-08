@@ -178,29 +178,37 @@ export default function LeadsPage() {
   const fetchLeads = async () => {
     try {
       setLoading(true)
+      console.log("fetchLeads called");
       const params = new URLSearchParams({
         page: pagination.page.toString(),
         limit: pagination.limit.toString(),
       })
-
       if (statusFilter !== "all") params.append("status", statusFilter)
       if (sourceFilter !== "all") params.append("source_id", sourceFilter)
       if (assigneeFilter !== "all") params.append("assigned_to", assigneeFilter)
       if (productCategoryFilter !== "all") params.append("product_category", productCategoryFilter)
       if (searchQuery) params.append("search", searchQuery)
-
-      console.log("Fetching leads with params:", params.toString())
       const response = await fetch(`/api/leads?${params}`)
-
       if (!response.ok) {
         const errorData = await response.json()
         throw new Error(errorData.error || "Failed to fetch leads")
       }
-
       const data: PaginatedResponse = await response.json()
-      console.log("Leads fetched:", data)
       setLeads(data.leads || [])
-      setPagination(data.pagination)
+      // Only update pagination if it actually changes
+      setPagination(prev => {
+        if (
+          prev.page !== data.pagination.page ||
+          prev.limit !== data.pagination.limit ||
+          prev.total !== data.pagination.total ||
+          prev.totalPages !== data.pagination.totalPages ||
+          prev.hasNext !== data.pagination.hasNext ||
+          prev.hasPrev !== data.pagination.hasPrev
+        ) {
+          return data.pagination
+        }
+        return prev
+      })
     } catch (error) {
       console.error("Error fetching leads:", error)
       toast({
@@ -290,8 +298,9 @@ export default function LeadsPage() {
   }
 
   useEffect(() => {
-    fetchLeads()
-  }, [pagination.page, statusFilter, sourceFilter, assigneeFilter, productCategoryFilter, searchQuery])
+    console.log("useEffect triggered", { pagination, statusFilter, sourceFilter, assigneeFilter, productCategoryFilter, searchQuery });
+    fetchLeads();
+  }, [pagination.page, statusFilter, sourceFilter, assigneeFilter, productCategoryFilter, searchQuery]);
 
   useEffect(() => {
     fetchLeadSources()
