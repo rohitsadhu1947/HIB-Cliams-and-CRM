@@ -347,9 +347,9 @@ export default function LeadsPage() {
       })
 
       // Close dialogs and reset state immediately
-      setIsAddDialogOpen(false)
-      setIsEditDialogOpen(false)
-      resetForm()
+      closeDialogAndResetFocus(() => setIsAddDialogOpen(false));
+      closeDialogAndResetFocus(() => setIsEditDialogOpen(false));
+      resetForm();
       
       // Fetch updated leads without delay
       await fetchLeads()
@@ -408,8 +408,8 @@ export default function LeadsPage() {
       })
       
       // Close dialog and clear state immediately
-      setIsAssignDialogOpen(false)
-      setSelectedLead(null)
+      closeDialogAndResetFocus(() => setIsAssignDialogOpen(false));
+      setSelectedLead(null);
       
       // Fetch updated leads without delay
       await fetchLeads()
@@ -489,6 +489,24 @@ export default function LeadsPage() {
       product_subtype: "", // Reset subtype when category changes
     })
   }
+
+  // Helper to close dialog and reset focus
+  const closeDialogAndResetFocus = (closeFn: () => void) => {
+    closeFn();
+    setTimeout(() => {
+      if (typeof window !== 'undefined' && document && document.body) {
+        document.body.focus();
+        console.log('Focus reset to body after dialog close');
+      }
+    }, 0);
+  };
+
+  // Add diagnostics for dialog state
+  useEffect(() => {
+    console.log('Assign dialog open:', isAssignDialogOpen);
+    console.log('Edit dialog open:', isEditDialogOpen);
+    console.log('Add dialog open:', isAddDialogOpen);
+  }, [isAssignDialogOpen, isEditDialogOpen, isAddDialogOpen]);
 
   if (loading && sourcesLoading && usersLoading) {
     return <div className="p-6">Loading leads management...</div>
