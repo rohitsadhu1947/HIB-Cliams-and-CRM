@@ -145,6 +145,7 @@ export default function LeadsPage() {
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
   const [isAssignDialogOpen, setIsAssignDialogOpen] = useState(false)
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
   // Form data
   const [formData, setFormData] = useState({
@@ -300,8 +301,11 @@ export default function LeadsPage() {
   // Handle form submission
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-
+    
+    if (isSubmitting) return // Prevent multiple submissions
+    
     try {
+      setIsSubmitting(true)
       const submitData = {
         ...formData,
         source_id: formData.source_id ? Number.parseInt(formData.source_id) : undefined,
@@ -333,17 +337,13 @@ export default function LeadsPage() {
         description: `Lead ${selectedLead ? "updated" : "created"} successfully`,
       })
 
-      // Close dialogs first
+      // Close dialogs and reset state immediately
       setIsAddDialogOpen(false)
       setIsEditDialogOpen(false)
-      
-      // Reset form and selected lead
       resetForm()
       
-      // Fetch updated leads after a short delay to ensure state is cleared
-      setTimeout(() => {
-        fetchLeads()
-      }, 100)
+      // Fetch updated leads without delay
+      await fetchLeads()
     } catch (error) {
       console.error("Error saving lead:", error)
       toast({
@@ -351,6 +351,8 @@ export default function LeadsPage() {
         description: error instanceof Error ? error.message : "Failed to save lead",
         variant: "destructive",
       })
+    } finally {
+      setIsSubmitting(false)
     }
   }
 
@@ -379,9 +381,10 @@ export default function LeadsPage() {
 
   // Handle assign
   const handleAssign = async (userId: number) => {
-    if (!selectedLead) return
+    if (!selectedLead || isSubmitting) return
 
     try {
+      setIsSubmitting(true)
       const response = await fetch(`/api/leads/${selectedLead.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -395,16 +398,12 @@ export default function LeadsPage() {
         description: "Lead assigned successfully",
       })
       
-      // Close dialog first
+      // Close dialog and clear state immediately
       setIsAssignDialogOpen(false)
-      
-      // Clear selected lead
       setSelectedLead(null)
       
-      // Fetch updated leads after a short delay
-      setTimeout(() => {
-        fetchLeads()
-      }, 100)
+      // Fetch updated leads without delay
+      await fetchLeads()
     } catch (error) {
       console.error("Error assigning lead:", error)
       toast({
@@ -412,6 +411,8 @@ export default function LeadsPage() {
         description: "Failed to assign lead",
         variant: "destructive",
       })
+    } finally {
+      setIsSubmitting(false)
     }
   }
 
@@ -733,7 +734,9 @@ export default function LeadsPage() {
                 <Button type="button" variant="outline" onClick={() => setIsAddDialogOpen(false)}>
                   Cancel
                 </Button>
-                <Button type="submit">Create Lead</Button>
+                <Button type="submit" disabled={isSubmitting}>
+                  {isSubmitting ? "Creating..." : "Create Lead"}
+                </Button>
               </DialogFooter>
             </form>
           </DialogContent>
@@ -1210,7 +1213,9 @@ export default function LeadsPage() {
               <Button type="button" variant="outline" onClick={() => setIsEditDialogOpen(false)}>
                 Cancel
               </Button>
-              <Button type="submit">Update Lead</Button>
+              <Button type="submit" disabled={isSubmitting}>
+                {isSubmitting ? "Updating..." : "Update Lead"}
+              </Button>
             </DialogFooter>
           </form>
         </DialogContent>
@@ -1234,7 +1239,9 @@ export default function LeadsPage() {
                     <div className="text-sm text-muted-foreground">{user.email}</div>
                     <div className="text-xs text-muted-foreground">{user.role}</div>
                   </div>
-                  <Button onClick={() => handleAssign(user.id)}>Assign</Button>
+                  <Button onClick={() => handleAssign(user.id)} disabled={isSubmitting}>
+                    {isSubmitting ? "Assigning..." : "Assign"}
+                  </Button>
                 </div>
               ))
             ) : (
