@@ -61,6 +61,14 @@ const routes = [
     resource: "policies",
   },
   {
+    id: "renewals",
+    label: "Renewals",
+    icon: FileCheck,
+    href: "/renewals",
+    color: "text-yellow-600",
+    resource: "renewals",
+  },
+  {
     id: "vehicles",
     label: "Vehicles",
     icon: Car,
