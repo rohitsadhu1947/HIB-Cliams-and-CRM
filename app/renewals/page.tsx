@@ -69,42 +69,42 @@ export default function RenewalsPage() {
       <p className="text-muted-foreground mb-6">Manage and track policy renewals</p>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4 mb-6">
-        <Card className="shadow-sm">
-          <CardHeader>
-            <CardTitle>Total</CardTitle>
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3 mb-4">
+        <Card className="shadow-sm p-2">
+          <CardHeader className="pb-1">
+            <CardTitle className="text-base font-semibold whitespace-nowrap">Total</CardTitle>
           </CardHeader>
-          <CardContent className="text-2xl font-bold">{summary.total}</CardContent>
+          <CardContent className="text-lg font-bold pt-0">{summary.total}</CardContent>
         </Card>
-        <Card className="shadow-sm">
-          <CardHeader>
-            <CardTitle>Pending</CardTitle>
+        <Card className="shadow-sm p-2">
+          <CardHeader className="pb-1">
+            <CardTitle className="text-base font-semibold whitespace-nowrap">Pending</CardTitle>
           </CardHeader>
-          <CardContent className="text-2xl font-bold text-yellow-600">{summary.pending}</CardContent>
+          <CardContent className="text-lg font-bold text-yellow-700 pt-0">{summary.pending}</CardContent>
         </Card>
-        <Card className="shadow-sm">
-          <CardHeader>
-            <CardTitle>Overdue</CardTitle>
+        <Card className="shadow-sm p-2">
+          <CardHeader className="pb-1">
+            <CardTitle className="text-base font-semibold whitespace-nowrap">Overdue</CardTitle>
           </CardHeader>
-          <CardContent className="text-2xl font-bold text-red-600">{summary.overdue}</CardContent>
+          <CardContent className="text-lg font-bold text-red-600 pt-0">{summary.overdue}</CardContent>
         </Card>
-        <Card className="shadow-sm">
-          <CardHeader>
-            <CardTitle>Converted</CardTitle>
+        <Card className="shadow-sm p-2">
+          <CardHeader className="pb-1">
+            <CardTitle className="text-base font-semibold whitespace-nowrap">Converted</CardTitle>
           </CardHeader>
-          <CardContent className="text-2xl font-bold text-green-600">{summary.converted}</CardContent>
+          <CardContent className="text-lg font-bold text-green-600 pt-0">{summary.converted}</CardContent>
         </Card>
-        <Card className="shadow-sm">
-          <CardHeader>
-            <CardTitle>Lost</CardTitle>
+        <Card className="shadow-sm p-2">
+          <CardHeader className="pb-1">
+            <CardTitle className="text-base font-semibold whitespace-nowrap">Lost</CardTitle>
           </CardHeader>
-          <CardContent className="text-2xl font-bold text-gray-500">{summary.lost}</CardContent>
+          <CardContent className="text-lg font-bold text-gray-500 pt-0">{summary.lost}</CardContent>
         </Card>
-        <Card className="shadow-sm">
-          <CardHeader>
-            <CardTitle>Conversion Rate</CardTitle>
+        <Card className="shadow-sm p-2">
+          <CardHeader className="pb-1">
+            <CardTitle className="text-base font-semibold whitespace-nowrap">Conversion Rate</CardTitle>
           </CardHeader>
-          <CardContent className="text-2xl font-bold text-blue-600">{summary.conversionRate}%</CardContent>
+          <CardContent className="text-lg font-bold text-blue-600 pt-0">{summary.conversionRate}%</CardContent>
         </Card>
       </div>
 
