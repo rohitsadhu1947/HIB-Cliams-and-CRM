@@ -28,11 +28,15 @@ export default function RenewalsPage() {
       setLoading(true);
       setError(null);
       try {
+        console.log("Frontend: Fetching renewals...");
         const res = await fetch("/api/renewals");
+        console.log("Frontend: Response status:", res.status);
         if (!res.ok) throw new Error("Failed to fetch renewals");
         const data = await res.json();
+        console.log("Frontend: Received data:", data);
         setRenewals(data.renewals || []);
       } catch (err: any) {
+        console.error("Frontend: Error:", err);
         setError(err.message || "Unknown error");
       } finally {
         setLoading(false);
