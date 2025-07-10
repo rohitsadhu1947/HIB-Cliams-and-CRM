@@ -14,13 +14,25 @@ export default async function RenewalDetailPage({ params }: { params: { id: stri
   `;
   if (!renewals || renewals.length === 0) return notFound();
   const r = renewals[0];
+  
+  // Format dates safely
+  const formatDate = (dateString: string | null) => {
+    if (!dateString) return "-";
+    try {
+      return new Date(dateString).toLocaleDateString();
+    } catch {
+      return dateString;
+    }
+  };
+
   return (
     <div className="p-6 space-y-6">
       <h1 className="text-2xl font-bold mb-2">Renewal Details</h1>
       <div className="space-y-2">
         <div><b>Policy #:</b> {r.policy_number}</div>
         <div><b>Policy Holder:</b> {r.policy_holder_name}</div>
-        <div><b>Renewal Date:</b> {r.renewal_date}</div>
+        <div><b>Renewal Date:</b> {formatDate(r.renewal_date)}</div>
+        <div><b>Policy End Date:</b> {formatDate(r.end_date)}</div>
         <div><b>Status:</b> {r.status}</div>
         <div><b>Assigned To:</b> {r.assigned_to_name ?? r.assigned_to ?? "Unassigned"}</div>
         <div><b>Notes:</b> {r.renewal_notes ?? "-"}</div>

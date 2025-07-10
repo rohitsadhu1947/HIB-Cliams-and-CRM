@@ -29,6 +29,15 @@ function getSummary(renewals: Renewal[]) {
   return { total, pending, overdue, converted, lost, conversionRate };
 }
 
+function formatDate(dateString: string | null) {
+  if (!dateString) return "-";
+  try {
+    return new Date(dateString).toLocaleDateString();
+  } catch {
+    return dateString;
+  }
+}
+
 export default function RenewalsPage() {
   const [renewals, setRenewals] = useState<Renewal[]>([]);
   const [loading, setLoading] = useState(true);
@@ -127,7 +136,7 @@ export default function RenewalsPage() {
                   <tr key={r.id} className="border-b hover:bg-gray-50 transition">
                     <td className="px-4 py-2 border font-medium">{r.policy_number}</td>
                     <td className="px-4 py-2 border">{r.policy_holder_name}</td>
-                    <td className="px-4 py-2 border">{new Date(r.renewal_date).toLocaleDateString()}</td>
+                    <td className="px-4 py-2 border">{formatDate(r.renewal_date)}</td>
                     <td className="px-4 py-2 border">
                       <Badge variant={
                         r.status === "pending"

@@ -9,6 +9,7 @@ export async function GET(req: NextRequest) {
       JOIN policies p ON r.policy_id = p.id
       JOIN policy_holders ph ON p.policy_holder_id = ph.id
       LEFT JOIN users u ON r.assigned_to = u.id
+      WHERE r.renewal_date >= CURRENT_DATE - INTERVAL '30 days'
       ORDER BY r.renewal_date ASC
     `;
     return NextResponse.json({ renewals });
