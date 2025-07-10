@@ -1,4 +1,5 @@
 "use client";
+console.log("Rendering RenewalsPage");
 
 import { useEffect, useState } from "react";
 
