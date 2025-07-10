@@ -103,7 +103,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const hasPermission = (resource: string): boolean => {
     if (!user) return false
-    return ROLE_PERMISSIONS[user.role]?.includes(resource) || false
+    const allowed = ROLE_PERMISSIONS[user.role]?.includes(resource) || false
+    console.log("hasPermission check:", { resource, allowed, role: user.role, ROLE_PERMISSIONS })
+    return allowed
   }
 
   useEffect(() => {
