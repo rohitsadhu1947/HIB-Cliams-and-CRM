@@ -155,7 +155,6 @@ export default function RenewalsPage() {
                     <td className="px-4 py-2 border">{r.assigned_to_name ?? r.assigned_to ?? "Unassigned"}</td>
                     <td className="px-4 py-2 border">
                       <a href={`/renewals/${r.id}`} className="text-blue-600 hover:underline">View</a>
-                      {/* Placeholders for future actions: Edit, Assign, Status, Activities */}
                     </td>
                   </tr>
                 ))
@@ -163,26 +162,6 @@ export default function RenewalsPage() {
             </tbody>
           </table>
         )}
-      </div>
-
-      {/* Placeholders for future features */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-8">
-        <Card className="shadow-sm">
-          <CardHeader>
-            <CardTitle>Assignment & Status Change (Coming Soon)</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-muted-foreground">Assign renewals to users, change status, and manage workflow here.</div>
-          </CardContent>
-        </Card>
-        <Card className="shadow-sm">
-          <CardHeader>
-            <CardTitle>Activities & Status History (Coming Soon)</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-muted-foreground">Track all activities and view status history for each renewal here.</div>
-          </CardContent>
-        </Card>
       </div>
     </div>
   );
