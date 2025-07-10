@@ -3,16 +3,14 @@ import { sql } from "@/lib/db";
 
 export async function GET(req: NextRequest) {
   try {
-    console.log("API: Fetching renewals...");
-    // Optional: parse query params for filtering in future
     const renewals = await sql`
-      SELECT r.*, p.policy_number, p.end_date, p.policy_type, p.status as policy_status, ph.name as policy_holder_name
+      SELECT r.*, p.policy_number, p.end_date, p.policy_type, p.status as policy_status, ph.name as policy_holder_name, u.full_name as assigned_to_name
       FROM policy_renewals r
       JOIN policies p ON r.policy_id = p.id
       JOIN policy_holders ph ON p.policy_holder_id = ph.id
+      LEFT JOIN users u ON r.assigned_to = u.id
       ORDER BY r.renewal_date ASC
     `;
-    console.log("API: Found renewals:", renewals.length);
     return NextResponse.json({ renewals });
   } catch (error) {
     console.error("API: Error fetching renewals:", error);

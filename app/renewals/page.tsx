@@ -16,6 +16,7 @@ interface Renewal {
   policy_type: string;
   policy_status: string;
   policy_holder_name: string;
+  assigned_to_name?: string; // Added for assigned user name
 }
 
 export default function RenewalsPage() {
@@ -78,10 +79,9 @@ export default function RenewalsPage() {
                     <td className="px-4 py-2 border">{r.policy_holder_name}</td>
                     <td className="px-4 py-2 border">{r.renewal_date}</td>
                     <td className="px-4 py-2 border">{r.status}</td>
-                    <td className="px-4 py-2 border">{r.assigned_to ?? "Unassigned"}</td>
+                    <td className="px-4 py-2 border">{r.assigned_to_name ?? r.assigned_to ?? "Unassigned"}</td>
                     <td className="px-4 py-2 border">
-                      {/* Placeholder for actions: View, Edit, Mark as Renewed, etc. */}
-                      <button className="text-blue-600 hover:underline">View</button>
+                      <a href={`/renewals/${r.id}`} className="text-blue-600 hover:underline">View</a>
                     </td>
                   </tr>
                 ))
