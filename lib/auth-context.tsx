@@ -134,7 +134,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // Check if user has permission for current path
         const currentSection = pathname.split("/")[1] || "dashboard"
         const hasAccess = hasPermission(currentSection)
-
+        console.log("Route guard:", { pathname, currentSection, hasAccess, user })
         if (!hasAccess) {
           console.log("No access to", currentSection, "redirecting to dashboard")
           router.push("/")
